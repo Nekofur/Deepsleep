@@ -78,17 +78,17 @@ A sync downloads only the small state file, merges it per session id (newest `up
 ### Self-hosted server
 
 ```sh
-SYNC_API_ORIGIN="https://api.deepseek.com" pnpm sync
+SYNC_MAX_USERS=20 pnpm sync
 ```
 
-Sync uses the tools service API key as its identity. The server verifies the key with the provider once (cached for ten minutes) through `GET /models`, then keeps each key in its own directory named after the key's SHA-256 — different keys are isolated users, and the raw key is never written to disk. In Settings → Sync choose the server transport, enter the URL, and turn on **Enable sync**: a sync runs immediately and then every five minutes.
+The browser validates the tools service API key against the provider (`GET /models`) and then sends only its SHA-256 to the sync server. The server never sees the raw key: it uses the hash as the user id, keeps each user in their own directory, and rejects new users once `SYNC_MAX_USERS` is reached. In Settings → Sync choose the server transport, enter the URL, and turn on **Enable sync**: the key is validated, a sync runs immediately, then every five minutes.
 
-| Variable           | Default                    | Purpose                                                                                |
-| ------------------ | -------------------------- | -------------------------------------------------------------------------------------- |
-| `PORT`             | `8080`                     | Listen port                                                                            |
-| `SYNC_DATA_DIR`    | `./.sync-data`             | Users, state files and image originals                                                 |
-| `SYNC_API_ORIGIN`  | `https://api.deepseek.com` | Origin used to verify keys (`GET /models`)                                             |
-| `SYNC_ADMIN_TOKEN` | unset                      | Enables `GET /api/admin/users` and `DELETE /api/admin/users/{id}` with `X-Admin-Token` |
+| Variable           | Default        | Purpose                                                                                |
+| ------------------ | -------------- | -------------------------------------------------------------------------------------- |
+| `PORT`             | `8080`         | Listen port                                                                            |
+| `SYNC_DATA_DIR`    | `./.sync-data` | Users, state files and image originals                                                 |
+| `SYNC_MAX_USERS`   | `20`           | Maximum number of users; `0` means unlimited                                           |
+| `SYNC_ADMIN_TOKEN` | unset          | Enables `GET /api/admin/users` and `DELETE /api/admin/users/{id}` with `X-Admin-Token` |
 
 The server exposes `GET/PUT /api/sync/state` (ETag preconditions), `GET/PUT /api/sync/files/{id}` and `GET /api/sync/me`, enables CORS for browser clients, and stores plain files that can be backed up or put behind HTTPS with a reverse proxy. The client accepts `host:port` as well as a full `http(s)://` URL.
 
@@ -135,17 +135,17 @@ Conversation sync is optional:
 - **Self-hosted server**: run the bundled zero-dependency server with Node.js 18 or newer:
 
   ```sh
-  SYNC_DATA_DIR=/var/lib/deepsleep PORT=8080 SYNC_ADMIN_TOKEN='admin-secret' node server/sync-server.mjs
+  SYNC_DATA_DIR=/var/lib/deepsleep PORT=8080 SYNC_MAX_USERS=20 SYNC_ADMIN_TOKEN='admin-secret' node server/sync-server.mjs
   ```
 
-  Put it behind HTTPS (Caddy or nginx) and keep `SYNC_DATA_DIR` on a persistent volume. Each user is derived from the tools service API key they already configure in the app; the server calls the provider's `/models` endpoint to verify the key and stores only its SHA-256. Back up `users/` (each user has `state.json.gz` and `files/`). If `SYNC_ADMIN_TOKEN` is set, `GET /api/admin/users` lists users with size and revision, and `DELETE /api/admin/users/{id}` removes one.
+  Put it behind HTTPS (Caddy or nginx) and keep `SYNC_DATA_DIR` on a persistent volume. The browser verifies the tools service key and sends its SHA-256; the server stores that hash and caps new users with `SYNC_MAX_USERS`. Back up `users/` (each user has `state.json.gz` and `files/`). If `SYNC_ADMIN_TOKEN` is set, `GET /api/admin/users` lists users with size and revision, and `DELETE /api/admin/users/{id}` removes one.
 
-| Variable           | Default                    | Purpose                                    |
-| ------------------ | -------------------------- | ------------------------------------------ |
-| `PORT`             | `8080`                     | Listen port                                |
-| `SYNC_DATA_DIR`    | `./.sync-data`             | Users, state files and image originals     |
-| `SYNC_API_ORIGIN`  | `https://api.deepseek.com` | Origin used to verify keys                 |
-| `SYNC_ADMIN_TOKEN` | unset                      | Admin token for the user management routes |
+| Variable           | Default        | Purpose                                      |
+| ------------------ | -------------- | -------------------------------------------- |
+| `PORT`             | `8080`         | Listen port                                  |
+| `SYNC_DATA_DIR`    | `./.sync-data` | Users, state files and image originals       |
+| `SYNC_MAX_USERS`   | `20`           | Maximum number of users; `0` means unlimited |
+| `SYNC_ADMIN_TOKEN` | unset          | Admin token for the user management routes   |
 
 ## Development
 

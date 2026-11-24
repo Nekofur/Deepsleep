@@ -1,6 +1,6 @@
-import { getToolsConfig } from '../providers/store.js'
 import type { SyncConfig } from './store.js'
 import { readFile, readState, writeFile, writeState } from './api.js'
+import { resolveSyncToken } from './token.js'
 import { readS3File, readS3State, writeS3File, writeS3State } from './s3.js'
 
 export type RemoteState = { bytes: Uint8Array<ArrayBuffer>; etag: string }
@@ -17,10 +17,10 @@ export type SyncTransport = {
   writeFile(id: string, blob: Blob, signal?: AbortSignal): Promise<void>
 }
 
-/** 服务器通道每次请求都取当前工具服务 Key，换 Key 即切换同步用户 */
-const serverConfig = (config: SyncConfig) => ({
+/** 服务器通道每次请求先确保 Key 已校验，并使用它的 SHA-256 作为凭据 */
+const serverConfig = async (config: SyncConfig) => ({
   serverUrl: config.serverUrl,
-  apiKey: getToolsConfig().apiKey,
+  token: await resolveSyncToken(),
 })
 
 export const createTransport = (config: SyncConfig): SyncTransport =>
@@ -32,8 +32,10 @@ export const createTransport = (config: SyncConfig): SyncTransport =>
         writeFile: (id, blob, signal) => writeS3File(config.s3, id, blob, signal),
       }
     : {
-        readState: (signal) => readState(serverConfig(config), signal),
-        writeState: (bytes, etag, signal) => writeState(serverConfig(config), bytes, etag, signal),
-        readFile: (id, signal) => readFile(serverConfig(config), id, signal),
-        writeFile: (id, blob, signal) => writeFile(serverConfig(config), id, blob, signal),
+        readState: async (signal) => readState(await serverConfig(config), signal),
+        writeState: async (bytes, etag, signal) =>
+          writeState(await serverConfig(config), bytes, etag, signal),
+        readFile: async (id, signal) => readFile(await serverConfig(config), id, signal),
+        writeFile: async (id, blob, signal) =>
+          writeFile(await serverConfig(config), id, blob, signal),
       }

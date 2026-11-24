@@ -233,6 +233,7 @@ export const SyncSettings = () => {
                 {t('syncConfigureTools')}
               </Button>
             </div>
+            <div className={styles.hint}>{t('syncCredentialHash')}</div>
           </div>
           <div className={styles.row}>
             <Button

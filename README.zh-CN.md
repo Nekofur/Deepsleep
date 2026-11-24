@@ -78,17 +78,17 @@ pnpm build
 ### 自建服务器
 
 ```sh
-SYNC_API_ORIGIN="https://api.deepseek.com" pnpm sync
+SYNC_MAX_USERS=20 pnpm sync
 ```
 
-同步用「工具服务」里的 API Key 作为身份：服务器拿 Key 向供应商的 `GET /models` 校验一次（结果缓存 10 分钟），通过后按 Key 的 SHA-256 建立独立目录，不同 Key 就是互相隔离的用户，原始 Key 不落盘。设置 → 会话同步 选「自建服务器」，填地址后打开「启用同步」：会立即同步一次，之后每 5 分钟同步。
+浏览器先拿「工具服务」里的 API Key 向供应商 `GET /models` 校验，通过后只把它的 SHA-256 发给同步服务器。服务器全程接触不到原始 Key：哈希就是用户 id，每个用户一个独立目录；新用户数量达到 `SYNC_MAX_USERS` 后拒绝继续创建。设置 → 会话同步 选「自建服务器」，填地址后打开「启用同步」：先校验 Key，再立即同步一次，之后每 5 分钟同步。
 
-| 变量               | 默认值                     | 用途                                                                                   |
-| ------------------ | -------------------------- | -------------------------------------------------------------------------------------- |
-| `PORT`             | `8080`                     | 监听端口                                                                               |
-| `SYNC_DATA_DIR`    | `./.sync-data`             | 用户目录、状态文件与图片原件                                                           |
-| `SYNC_API_ORIGIN`  | `https://api.deepseek.com` | 校验 Key 的地址（`GET /models`）                                                       |
-| `SYNC_ADMIN_TOKEN` | 未设置                     | 设置后可用 `X-Admin-Token` 调用 `GET /api/admin/users`、`DELETE /api/admin/users/{id}` |
+| 变量               | 默认值         | 用途                                                                                   |
+| ------------------ | -------------- | -------------------------------------------------------------------------------------- |
+| `PORT`             | `8080`         | 监听端口                                                                               |
+| `SYNC_DATA_DIR`    | `./.sync-data` | 用户目录、状态文件与图片原件                                                           |
+| `SYNC_MAX_USERS`   | `20`           | 用户数上限，`0` 表示不限制                                                             |
+| `SYNC_ADMIN_TOKEN` | 未设置         | 设置后可用 `X-Admin-Token` 调用 `GET /api/admin/users`、`DELETE /api/admin/users/{id}` |
 
 服务端提供 `GET/PUT /api/sync/state`（ETag 条件写入）、`GET/PUT /api/sync/files/{id}` 与 `GET /api/sync/me`，已开启浏览器所需的 CORS，按普通文件保存，便于备份或放在 HTTPS 反向代理之后。客户端填 `host:port` 或完整的 `http(s)://` 地址都可以。
 
@@ -135,17 +135,17 @@ SYNC_API_ORIGIN="https://api.deepseek.com" pnpm sync
 - **自建服务器**：用 Node.js 18+ 运行仓库自带的零依赖服务：
 
   ```sh
-  SYNC_DATA_DIR=/var/lib/deepsleep PORT=8080 SYNC_ADMIN_TOKEN='管理密钥' node server/sync-server.mjs
+  SYNC_DATA_DIR=/var/lib/deepsleep PORT=8080 SYNC_MAX_USERS=20 SYNC_ADMIN_TOKEN='管理密钥' node server/sync-server.mjs
   ```
 
-  放在 HTTPS 反向代理（Caddy 或 nginx）之后，`SYNC_DATA_DIR` 挂持久卷。用户身份来自每台设备在应用里填写的工具服务 API Key，服务器调用供应商的 `/models` 校验并只保存 Key 的 SHA-256；备份 `users/` 即可（每个用户一个目录，含 `state.json.gz` 与 `files/`）。设置 `SYNC_ADMIN_TOKEN` 后，`GET /api/admin/users` 可列出用户及占用大小、版本，`DELETE /api/admin/users/{id}` 可删除某个用户。
+  放在 HTTPS 反向代理（Caddy 或 nginx）之后，`SYNC_DATA_DIR` 挂持久卷。浏览器校验工具服务 Key 后只发送它的 SHA-256，服务器只保存哈希并用 `SYNC_MAX_USERS` 限制新用户数量；备份 `users/` 即可（每个用户一个目录，含 `state.json.gz` 与 `files/`）。设置 `SYNC_ADMIN_TOKEN` 后，`GET /api/admin/users` 可列出用户及占用大小、版本，`DELETE /api/admin/users/{id}` 可删除某个用户。
 
-| 变量               | 默认值                     | 用途                     |
-| ------------------ | -------------------------- | ------------------------ |
-| `PORT`             | `8080`                     | 监听端口                 |
-| `SYNC_DATA_DIR`    | `./.sync-data`             | 用户、状态文件与图片原件 |
-| `SYNC_API_ORIGIN`  | `https://api.deepseek.com` | 校验 Key 的地址          |
-| `SYNC_ADMIN_TOKEN` | 未设置                     | 用户管理接口的管理密钥   |
+| 变量               | 默认值         | 用途                       |
+| ------------------ | -------------- | -------------------------- |
+| `PORT`             | `8080`         | 监听端口                   |
+| `SYNC_DATA_DIR`    | `./.sync-data` | 用户、状态文件与图片原件   |
+| `SYNC_MAX_USERS`   | `20`           | 用户数上限，`0` 表示不限制 |
+| `SYNC_ADMIN_TOKEN` | 未设置         | 用户管理接口的管理密钥     |
 
 ## 开发
 

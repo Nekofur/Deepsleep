@@ -234,7 +234,7 @@ export const zh = {
   toolsClientSearchHint:
     '对话供应商不支持服务端联网时，本机会用这里的搜索与抓取接口取回资料，再随提问一起发给模型；附件无法上传时用 OCR 转成文字。',
   syncSectionHint:
-    '把本机会话同步到自己的存储：自建服务器填地址，用工具服务的 API Key 识别身份并按用户隔离；也可以直接填写 S3 兼容对象存储的连接信息。按会话合并，两台设备都可以新增、修改和删除；Key 与设置不同步。',
+    '把本机会话同步到自己的存储：自建服务器填地址，本机先校验工具服务的 API Key，通过后只把 SHA-256 作为身份发给服务器，服务器按哈希隔离用户并限制用户数；也可以直接填写 S3 兼容对象存储的连接信息。按会话合并，两台设备都可以新增、修改和删除；Key 与设置不同步。',
   syncTransport: '同步方式',
   syncTransportServer: '自建服务器',
   syncTransportS3: 'S3 对象存储',
@@ -252,11 +252,12 @@ export const zh = {
   syncServerUrl: '同步服务器',
   syncServerUrlPlaceholder: 'http://localhost:8080',
   syncCredential: '同步凭据',
-  syncCredentialTools: '工具服务 API Key',
+  syncCredentialTools: '工具服务 API Key（本机校验）',
+  syncCredentialHash: '服务器只收到 Key 的 SHA-256，原始 Key 不会离开本机。',
   syncCredentialMissing: '还没有填写工具服务 API Key',
   syncConfigureTools: '配置工具服务',
   syncEnable: '启用同步',
-  syncEnableHint: '开启后立即同步一次，之后每 5 分钟自动同步。',
+  syncEnableHint: '开启后先校验 Key，再立即同步一次，之后每 5 分钟自动同步。',
   syncServerHint:
     '仓库自带 server/sync-server.mjs，可用 pnpm sync 在本地启动；服务器会用工具服务的 Key 校验身份。',
   syncConnect: '连接并同步',
@@ -273,7 +274,7 @@ export const zh = {
   syncUploaded: '已上传本地改动',
   syncErrorNotConfigured: '请先填写同步所需的地址与凭据',
   syncErrorToolsKey: '请先在工具服务里填写 API Key',
-  syncErrorAuthExpired: '鉴权失败：工具服务 Key 无效或已过期，请检查后重试',
+  syncErrorAuthExpired: 'Key 校验失败或同步凭据无效，请检查工具服务 Key 后重试',
   syncErrorNetwork: '无法连接同步服务，请检查地址与网络',
   syncErrorProtocol: '同步数据格式不正确，可能来自更新版本',
   syncErrorConflict: '其他设备刚刚写入，请重试',

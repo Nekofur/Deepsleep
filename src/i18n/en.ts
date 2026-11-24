@@ -245,7 +245,7 @@ export const en = {
   toolsClientSearchHint:
     'When the chat provider has no server-side web access, the app calls these search and fetch APIs locally and sends the results with your question. Documents that cannot be uploaded are read with OCR.',
   syncSectionHint:
-    'Sync conversations to your own storage: a self-hosted server takes a URL and uses your tools service API key as identity with per-user isolation, or enter S3-compatible object storage credentials directly. Sessions merge by id, so both devices can add, edit and delete; keys and settings are not synced.',
+    'Sync conversations to your own storage: a self-hosted server takes a URL; the browser validates your tools service API key and sends only its SHA-256, so the server isolates users by hash and caps how many can exist. You can also enter S3-compatible object storage credentials directly. Sessions merge by id, so both devices can add, edit and delete; keys and settings are not synced.',
   syncTransport: 'Sync via',
   syncTransportServer: 'Self-hosted server',
   syncTransportS3: 'S3 object storage',
@@ -264,11 +264,13 @@ export const en = {
   syncServerUrl: 'Sync server',
   syncServerUrlPlaceholder: 'http://localhost:8080',
   syncCredential: 'Credential',
-  syncCredentialTools: 'Tools service API key',
+  syncCredentialTools: 'Tools service API key (validated locally)',
+  syncCredentialHash:
+    'Only the SHA-256 of the key reaches the server; the key itself stays on this device.',
   syncCredentialMissing: 'No tools service API key yet',
   syncConfigureTools: 'Configure tools',
   syncEnable: 'Enable sync',
-  syncEnableHint: 'Syncs immediately when enabled, then every 5 minutes.',
+  syncEnableHint: 'Validates the key, syncs immediately, then every 5 minutes.',
   syncServerHint:
     'This repository ships server/sync-server.mjs; start it locally with pnpm sync. The server verifies the tools service key.',
   syncConnect: 'Connect and sync',
@@ -285,7 +287,8 @@ export const en = {
   syncUploaded: 'Local changes uploaded',
   syncErrorNotConfigured: 'Enter the sync address and credentials first',
   syncErrorToolsKey: 'Add a tools service API key first',
-  syncErrorAuthExpired: 'Authentication failed: the tools service key is invalid or expired',
+  syncErrorAuthExpired:
+    'Key validation failed or the sync credential is invalid. Check the tools service key.',
   syncErrorNetwork: 'Cannot reach the sync service. Check the URL and network.',
   syncErrorProtocol: 'Unsupported sync data, possibly from a newer version',
   syncErrorConflict: 'Another device just wrote; please retry',

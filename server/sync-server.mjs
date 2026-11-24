@@ -14,7 +14,7 @@
  * 环境变量：
  *   PORT=8080                    监听端口
  *   SYNC_DATA_DIR=./.sync-data   数据目录
- *   SYNC_API_ORIGIN=https://api.deepseek.com  校验 Key 的地址
+ *   SYNC_MAX_USERS=20            用户数上限；0 表示不限制
  *   SYNC_ADMIN_TOKEN             可选；设置后可用 X-Admin-Token 列出/删除用户
  */
 import { createHash, timingSafeEqual } from 'node:crypto'
@@ -25,12 +25,11 @@ import { join, resolve } from 'node:path'
 
 const PORT = Number(process.env.PORT ?? 8080)
 const DATA_DIR = resolve(process.env.SYNC_DATA_DIR ?? '.sync-data')
-const API_ORIGIN = (process.env.SYNC_API_ORIGIN ?? 'https://api.deepseek.com').replace(/\/+$/, '')
 const ADMIN_TOKEN = process.env.SYNC_ADMIN_TOKEN ?? ''
 const USERS_DIR = join(DATA_DIR, 'users')
 const STATE_LIMIT = 16 * 1024 * 1024
 const FILE_LIMIT = 128 * 1024 * 1024
-const AUTH_TTL = Number(process.env.SYNC_AUTH_TTL_SECONDS ?? 600) * 1000
+const MAX_USERS = Number(process.env.SYNC_MAX_USERS ?? 20)
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -54,9 +53,6 @@ const json = (res, status, body, headers = {}) => {
 }
 
 const digest = (value) => createHash('sha256').update(String(value)).digest()
-
-/** 已通过校验的 Key（只存哈希）→ 过期时间 */
-const verified = new Map()
 
 const readBody = async (req, limit) => {
   const chunks = []
@@ -113,53 +109,38 @@ const withUserLock = async (id, task) => {
   }
 }
 
-/** 向 DeepSeek 校验 Key；通过后返回用户 id，失败返回 { status, error } */
-const authenticate = async (key) => {
-  const id = digest(key).toString('hex')
-  const now = Date.now()
-  const expiry = verified.get(id)
-  if (expiry && expiry > now) {
-    return { id }
-  }
-  if (!/^[\x21-\x7e]+$/.test(key)) {
-    return { status: 401, error: 'invalid API key' }
-  }
-  let response
+const userExists = async (id) => {
   try {
-    response = await fetch(`${API_ORIGIN}/models`, {
-      headers: { Authorization: `Bearer ${key}` },
-      signal: AbortSignal.timeout(5000),
-    })
+    await stat(userDir(id))
+    return true
   } catch {
-    return { status: 502, error: 'cannot verify API key against the provider' }
+    return false
   }
-  if (response.status === 401 || response.status === 403) {
-    return { status: 401, error: 'invalid API key' }
-  }
-  if (!response.ok) {
-    return { status: 502, error: `provider returned ${response.status} while verifying the key` }
-  }
-  verified.set(id, now + AUTH_TTL)
-  await mkdir(filesDir(id), { recursive: true })
-  return { id }
 }
 
-/** 从请求里取出 Key 并校验，失败时直接写响应并返回 null */
+/**
+ * 凭据是前端校验通过后发来的 SHA-256（64 位十六进制）。服务器只认这个哈希，
+ * 不接触原始 Key；首次出现时按 SYNC_MAX_USERS 限制用户数，之后直接复用目录。
+ */
 const requireUser = async (req, res) => {
   const header = req.headers.authorization ?? ''
-  const key = header.startsWith('Bearer ') ? header.slice(7).trim() : ''
-  if (!key) {
-    json(res, 401, { error: 'missing API key' }, { 'WWW-Authenticate': 'Bearer' })
+  const token = header.startsWith('Bearer ') ? header.slice(7).trim().toLowerCase() : ''
+  if (!/^[a-f0-9]{64}$/.test(token)) {
+    json(res, 401, { error: 'invalid sync token' }, { 'WWW-Authenticate': 'Bearer' })
     return null
   }
-  const result = await authenticate(key)
-  if (!result.id) {
-    json(res, result.status ?? 401, { error: result.error ?? 'invalid API key' })
-    return null
+  if (!(await userExists(token))) {
+    if (MAX_USERS > 0) {
+      const users = await readdir(USERS_DIR)
+      if (users.length >= MAX_USERS) {
+        json(res, 403, { error: `user limit reached (${MAX_USERS})` })
+        return null
+      }
+    }
+    await mkdir(filesDir(token), { recursive: true })
   }
-  return result.id
+  return token
 }
-
 const adminAuthorized = (req) => {
   if (!ADMIN_TOKEN) {
     return false
@@ -288,7 +269,7 @@ const server = createServer(async (req, res) => {
       return
     }
     if (url.pathname === '/api/health') {
-      json(res, 200, { ok: true, name: 'deepsleep-sync', version: 3, multiUser: true })
+      json(res, 200, { ok: true, name: 'deepsleep-sync', version: 4, maxUsers: MAX_USERS })
       return
     }
 
@@ -319,7 +300,6 @@ const server = createServer(async (req, res) => {
       const adminUser = /^\/api\/admin\/users\/([a-f0-9]{64})$/.exec(url.pathname)
       if (adminUser && req.method === 'DELETE') {
         await rm(userDir(adminUser[1]), { recursive: true, force: true })
-        verified.delete(adminUser[1])
         json(res, 200, { ok: true })
         return
       }
@@ -376,7 +356,7 @@ await mkdir(USERS_DIR, { recursive: true })
 server.listen(PORT, () => {
   console.log(`[sync] listening on http://localhost:${PORT}`)
   console.log(`[sync] data dir: ${DATA_DIR}`)
-  console.log(`[sync] verifying keys against ${API_ORIGIN}/models`)
+  console.log(`[sync] max users: ${MAX_USERS > 0 ? MAX_USERS : 'unlimited'}`)
   if (!ADMIN_TOKEN) {
     console.log('[sync] SYNC_ADMIN_TOKEN 未设置，管理接口已关闭')
   }

@@ -1,10 +1,10 @@
 import { SyncError } from './errors.js'
 
 /**
- * 自建同步服务器的客户端：用工具服务的 API Key 作为身份（Bearer），
- * 服务端校验 Key 后按 Key 隔离用户目录，保存 state.json.gz 与 files/{附件 id}。
+ * 自建同步服务器的客户端：前端校验工具服务 Key 后，只发送它的 SHA-256，
+ * 服务端按这个哈希隔离用户目录，保存 state.json.gz 与 files/{附件 id}。
  */
-export type ServerConfig = { serverUrl: string; apiKey: string }
+export type ServerConfig = { serverUrl: string; token: string }
 
 const normalizeServerUrl = (value: string) => {
   const trimmed = value.trim().replace(/\/+$/, '')
@@ -16,7 +16,7 @@ const normalizeServerUrl = (value: string) => {
 
 const url = (config: ServerConfig, path: string) => `${normalizeServerUrl(config.serverUrl)}${path}`
 
-const auth = (apiKey: string) => ({ Authorization: `Bearer ${apiKey}` })
+const auth = (token: string) => ({ Authorization: `Bearer ${token}` })
 
 const failure = async (response: Response): Promise<SyncError> => {
   const text = await response.text().catch(() => '')
@@ -59,7 +59,7 @@ export const readState = async (
 ): Promise<{ bytes: Uint8Array<ArrayBuffer>; etag: string } | null> => {
   const response = await send(url(config, '/api/sync/state'), {
     method: 'GET',
-    headers: auth(config.apiKey),
+    headers: auth(config.token),
     signal,
   })
   if (response.status === 404) {
@@ -82,7 +82,7 @@ export const writeState = async (
   signal?: AbortSignal
 ): Promise<{ etag: string }> => {
   const headers: Record<string, string> = {
-    ...auth(config.apiKey),
+    ...auth(config.token),
     'Content-Type': 'application/gzip',
   }
   if (etag) {
@@ -110,7 +110,7 @@ export const readFile = async (
 ): Promise<Blob | null> => {
   const response = await send(url(config, `/api/sync/files/${encodeURIComponent(id)}`), {
     method: 'GET',
-    headers: auth(config.apiKey),
+    headers: auth(config.token),
     signal,
   })
   if (response.status === 404) {
@@ -132,7 +132,7 @@ export const writeFile = async (
   const response = await send(url(config, `/api/sync/files/${encodeURIComponent(id)}`), {
     method: 'PUT',
     headers: {
-      ...auth(config.apiKey),
+      ...auth(config.token),
       'Content-Type': blob.type || 'application/octet-stream',
     },
     body: blob,
@@ -147,7 +147,7 @@ export const writeFile = async (
 export const verifyServer = async (config: ServerConfig, signal?: AbortSignal): Promise<void> => {
   const response = await send(url(config, '/api/sync/state'), {
     method: 'GET',
-    headers: auth(config.apiKey),
+    headers: auth(config.token),
     signal,
   })
   if (response.status === 404 || response.ok) {

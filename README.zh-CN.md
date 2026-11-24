@@ -37,7 +37,7 @@ pnpm build
 - 独立的工具服务：搜索、抓取、OCR、语音识别与朗读统一调用官方 DeepSeek 的 /v1/tools/\* 接口，换用其他对话模型时仍然可用。
 - 附件上传、粘贴与拖拽，语音输入和回复朗读；移动端录音时输入框首行显示实时频谱。
 - Markdown、代码高亮、KaTeX 公式和 Mermaid 图表。
-- 可选会话同步，两种通道：只用一个密码的自建服务器，或自己填凭据的 S3 兼容对象存储。gzip 状态 + 按文件增量、按会话合并、删除跨设备生效。
+- 可选会话同步，两种通道：用工具服务 API Key 识别用户的同步服务器，或自己填凭据的 S3 兼容对象存储。gzip 状态 + 按文件增量、按会话合并、删除跨设备生效。
 - 简体中文与英文、浅色与深色主题、移动端布局、位置设置、历史导入导出。
 
 ## 供应商与协议
@@ -64,7 +64,7 @@ pnpm build
 
 ## 会话同步
 
-设置 → 会话同步 有两种可以互换的通道：只用一个密码的自建服务器，或自己填写凭据的 S3 兼容对象存储。两者共用同一套合并与冲突检测逻辑。
+设置 → 会话同步 有两种可以互换的通道：用工具服务 API Key 识别用户的同步服务器，或自己填写凭据的 S3 兼容对象存储。两者共用同一套合并与冲突检测逻辑。
 
 ### 存储结构
 
@@ -78,16 +78,19 @@ pnpm build
 ### 自建服务器
 
 ```sh
-SYNC_PASSWORD="change-me" pnpm sync
+SYNC_API_ORIGIN="https://api.deepseek.com" pnpm sync
 ```
 
-| 变量            | 默认值         | 用途                             |
-| --------------- | -------------- | -------------------------------- |
-| `PORT`          | `8080`         | 监听端口                         |
-| `SYNC_PASSWORD` | `demo`         | 唯一凭据，作为 Bearer token 发送 |
-| `SYNC_DATA_DIR` | `./.sync-data` | 状态文件与图片原件               |
+同步用「工具服务」里的 API Key 作为身份：服务器拿 Key 向供应商的 `GET /models` 校验一次（结果缓存 10 分钟），通过后按 Key 的 SHA-256 建立独立目录，不同 Key 就是互相隔离的用户，原始 Key 不落盘。设置 → 会话同步 选「自建服务器」，填地址后打开「启用同步」：会立即同步一次，之后每 5 分钟同步。
 
-服务端提供 `GET/PUT /api/sync/state`（ETag 条件写入）与 `GET/PUT /api/sync/files/{id}`，已开启浏览器所需的 CORS，按普通文件保存，便于备份或放在 HTTPS 反向代理之后。客户端填 `host:port` 或完整的 `http(s)://` 地址都可以。
+| 变量               | 默认值                     | 用途                                                                                   |
+| ------------------ | -------------------------- | -------------------------------------------------------------------------------------- |
+| `PORT`             | `8080`                     | 监听端口                                                                               |
+| `SYNC_DATA_DIR`    | `./.sync-data`             | 用户目录、状态文件与图片原件                                                           |
+| `SYNC_API_ORIGIN`  | `https://api.deepseek.com` | 校验 Key 的地址（`GET /models`）                                                       |
+| `SYNC_ADMIN_TOKEN` | 未设置                     | 设置后可用 `X-Admin-Token` 调用 `GET /api/admin/users`、`DELETE /api/admin/users/{id}` |
+
+服务端提供 `GET/PUT /api/sync/state`（ETag 条件写入）、`GET/PUT /api/sync/files/{id}` 与 `GET /api/sync/me`，已开启浏览器所需的 CORS，按普通文件保存，便于备份或放在 HTTPS 反向代理之后。客户端填 `host:port` 或完整的 `http(s)://` 地址都可以。
 
 ### 直连 S3
 
@@ -112,7 +115,7 @@ SYNC_PASSWORD="change-me" pnpm sync
 
 ## 数据
 
-供应商 Key、设置、同步密码或 S3 凭据与同步状态保存在浏览器 localStorage，会话及附件原件保存在 IndexedDB，本地数据按浏览器用户配置和站点源（origin）隔离。发送对话、上传附件和使用语音功能时，相应内容会提交给配置的供应商；执行同步时，会话会发送到你的同步服务器或存储桶。
+供应商 Key、设置、工具服务 Key 或 S3 凭据与同步状态保存在浏览器 localStorage，会话及附件原件保存在 IndexedDB，本地数据按浏览器用户配置和站点源（origin）隔离。发送对话、上传附件和使用语音功能时，相应内容会提交给配置的供应商；执行同步时，会话会发送到你的同步服务器或存储桶。
 
 设置中的历史导入导出使用 DeepSeek 导出格式的 ZIP。导入会在确认并校验成功后替换全部本地会话和附件；导出包含会话与本地可用的图片原件，不包含 API Key、设置或非图片附件原件。格式与保留范围见[历史导入导出](src/services/chat/history/README.md)。
 
@@ -132,16 +135,17 @@ SYNC_PASSWORD="change-me" pnpm sync
 - **自建服务器**：用 Node.js 18+ 运行仓库自带的零依赖服务：
 
   ```sh
-  SYNC_PASSWORD='一串足够长的随机密码' SYNC_DATA_DIR=/var/lib/deepsleep PORT=8080 node server/sync-server.mjs
+  SYNC_DATA_DIR=/var/lib/deepsleep PORT=8080 SYNC_ADMIN_TOKEN='管理密钥' node server/sync-server.mjs
   ```
 
-  放在 HTTPS 反向代理（Caddy 或 nginx）之后，`SYNC_DATA_DIR` 挂持久卷，并备份 `state.json.gz` 与 `files/`。服务器只有一个共享密码、没有账号体系，拿到密码的人就能读写同步数据，务必使用长随机密码。
+  放在 HTTPS 反向代理（Caddy 或 nginx）之后，`SYNC_DATA_DIR` 挂持久卷。用户身份来自每台设备在应用里填写的工具服务 API Key，服务器调用供应商的 `/models` 校验并只保存 Key 的 SHA-256；备份 `users/` 即可（每个用户一个目录，含 `state.json.gz` 与 `files/`）。设置 `SYNC_ADMIN_TOKEN` 后，`GET /api/admin/users` 可列出用户及占用大小、版本，`DELETE /api/admin/users/{id}` 可删除某个用户。
 
-| 变量            | 默认值         | 用途                       |
-| --------------- | -------------- | -------------------------- |
-| `PORT`          | `8080`         | 监听端口                   |
-| `SYNC_PASSWORD` | `demo`         | 共享密码，作为 Bearer 发送 |
-| `SYNC_DATA_DIR` | `./.sync-data` | 状态文件与图片原件         |
+| 变量               | 默认值                     | 用途                     |
+| ------------------ | -------------------------- | ------------------------ |
+| `PORT`             | `8080`                     | 监听端口                 |
+| `SYNC_DATA_DIR`    | `./.sync-data`             | 用户、状态文件与图片原件 |
+| `SYNC_API_ORIGIN`  | `https://api.deepseek.com` | 校验 Key 的地址          |
+| `SYNC_ADMIN_TOKEN` | 未设置                     | 用户管理接口的管理密钥   |
 
 ## 开发
 

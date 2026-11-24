@@ -1,3 +1,4 @@
+import { getToolsConfig } from '../providers/store.js'
 import type { SyncConfig } from './store.js'
 import { readFile, readState, writeFile, writeState } from './api.js'
 import { readS3File, readS3State, writeS3File, writeS3State } from './s3.js'
@@ -16,6 +17,12 @@ export type SyncTransport = {
   writeFile(id: string, blob: Blob, signal?: AbortSignal): Promise<void>
 }
 
+/** 服务器通道每次请求都取当前工具服务 Key，换 Key 即切换同步用户 */
+const serverConfig = (config: SyncConfig) => ({
+  serverUrl: config.serverUrl,
+  apiKey: getToolsConfig().apiKey,
+})
+
 export const createTransport = (config: SyncConfig): SyncTransport =>
   config.transport === 's3'
     ? {
@@ -25,17 +32,8 @@ export const createTransport = (config: SyncConfig): SyncTransport =>
         writeFile: (id, blob, signal) => writeS3File(config.s3, id, blob, signal),
       }
     : {
-        readState: (signal) =>
-          readState({ serverUrl: config.serverUrl, password: config.password }, signal),
-        writeState: (bytes, etag, signal) =>
-          writeState(
-            { serverUrl: config.serverUrl, password: config.password },
-            bytes,
-            etag,
-            signal
-          ),
-        readFile: (id, signal) =>
-          readFile({ serverUrl: config.serverUrl, password: config.password }, id, signal),
-        writeFile: (id, blob, signal) =>
-          writeFile({ serverUrl: config.serverUrl, password: config.password }, id, blob, signal),
+        readState: (signal) => readState(serverConfig(config), signal),
+        writeState: (bytes, etag, signal) => writeState(serverConfig(config), bytes, etag, signal),
+        readFile: (id, signal) => readFile(serverConfig(config), id, signal),
+        writeFile: (id, blob, signal) => writeFile(serverConfig(config), id, blob, signal),
       }

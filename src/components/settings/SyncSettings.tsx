@@ -1,13 +1,12 @@
 import clsx from 'clsx'
 import { useState } from 'react'
 import { useTranslate, type TranslationKey, type TranslationMessage } from '../../i18n/index.js'
-import { verifyServer } from '../../services/sync/api.js'
+import { useProviders } from '../../services/providers/store.js'
 import { SyncError } from '../../services/sync/errors.js'
 import { syncNow } from '../../services/sync/engine.js'
 import { verifyS3, type S3Config } from '../../services/sync/s3.js'
 import {
   isSyncLinked,
-  logoutSync,
   updateSync,
   useSync,
   useSyncStatus,
@@ -16,7 +15,7 @@ import {
 } from '../../services/sync/store.js'
 import { Button } from '../base/Button.js'
 import { Select } from '../base/Select.js'
-import { showToast } from '../base/toastState.js'
+import { openSettings } from './settingsDialogState.js'
 import styles from './SyncSettings.module.css'
 
 /** 同步错误统一转成可展示的文案 */
@@ -62,6 +61,9 @@ const summaryText = (
     : t('syncNever')
 }
 
+/** 只露末四位的 Key，避免在设置页展示完整凭据 */
+const maskKey = (key: string) => `••••${key.slice(-4)}`
+
 type S3TextField = Exclude<keyof S3Config, 'pathStyle'>
 
 const S3_FIELDS: { key: S3TextField; label: TranslationKey; secret?: boolean }[] = [
@@ -74,14 +76,15 @@ const S3_FIELDS: { key: S3TextField; label: TranslationKey; secret?: boolean }[]
 ]
 
 /**
- * 会话同步：自建服务器只填地址和一个密码，或直连 S3 兼容对象存储。
- * 纯前端构建（pnpm build:s3）只保留 S3 通道。
+ * 会话同步：服务器通道复用工具服务的 API Key，开启「启用同步」即同步一次；
+ * 也可以直连 S3 兼容对象存储。纯前端构建（pnpm build:s3）只保留 S3 通道。
  */
 export const SyncSettings = () => {
   const t = useTranslate()
   const config = useSync()
   const status = useSyncStatus()
-  const [busy, setBusy] = useState<'connect' | 'sync' | 'verify' | null>(null)
+  const apiKey = useProviders((state) => state.tools.apiKey)
+  const [busy, setBusy] = useState<'connect' | 'sync' | null>(null)
   const [error, setError] = useState<TranslationMessage | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const linked = isSyncLinked(config)
@@ -90,7 +93,7 @@ export const SyncSettings = () => {
     updateSync({ s3: { ...config.s3, ...patch } })
   }
 
-  /** 服务器与 S3 都先验证连接，再执行一次同步 */
+  /** S3：先验证连接，再执行一次同步 */
   const connect = async () => {
     if (busy) {
       return
@@ -99,13 +102,8 @@ export const SyncSettings = () => {
     setError(null)
     setNotice(null)
     try {
-      if (config.transport === 's3') {
-        await verifyS3(config.s3)
-        setNotice(t('syncS3Verified'))
-      } else {
-        await verifyServer({ serverUrl: config.serverUrl, password: config.password })
-        setNotice(t('syncConnected'))
-      }
+      await verifyS3(config.s3)
+      setNotice(t('syncS3Verified'))
       setBusy(null)
       await sync()
     } catch (cause) {
@@ -130,6 +128,22 @@ export const SyncSettings = () => {
     } finally {
       setBusy(null)
     }
+  }
+
+  /** 启用开关：打开时立即同步一次，之后按自动同步的频率运行 */
+  const toggleEnabled = async () => {
+    if (config.enabled) {
+      updateSync({ enabled: false })
+      return
+    }
+    if (!linked) {
+      setError({
+        key: config.transport === 's3' ? 'syncErrorNotConfigured' : 'syncErrorToolsKey',
+      })
+      return
+    }
+    updateSync({ enabled: true })
+    await sync()
   }
 
   return (
@@ -207,76 +221,42 @@ export const SyncSettings = () => {
               onChange={(event) => updateSync({ serverUrl: event.target.value })}
             />
           </label>
-          <label className={styles.field}>
-            <span className={styles.fieldLabel}>{t('syncPassword')}</span>
-            <input
-              className={styles.input}
-              type="password"
-              value={config.password}
-              placeholder={t('syncPasswordPlaceholder')}
-              autoComplete="current-password"
-              disabled={busy !== null}
-              onChange={(event) => updateSync({ password: event.target.value })}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
-                  void connect()
-                }
-              }}
-            />
-          </label>
+          <div className={styles.field}>
+            <span className={styles.fieldLabel}>{t('syncCredential')}</span>
+            <div className={styles.credential}>
+              <span className={clsx(styles.credentialValue, !apiKey && styles.credentialMissing)}>
+                {apiKey
+                  ? `${t('syncCredentialTools')} ${maskKey(apiKey)}`
+                  : t('syncCredentialMissing')}
+              </span>
+              <Button variant="outlined" size="m" onClick={() => openSettings('tools')}>
+                {t('syncConfigureTools')}
+              </Button>
+            </div>
+          </div>
           <div className={styles.row}>
+            <Button
+              variant="outlined"
+              size="m"
+              aria-pressed={config.enabled}
+              disabled={busy !== null}
+              onClick={() => void toggleEnabled()}
+            >
+              {t('syncEnable')}
+              {config.enabled ? ' · ON' : ''}
+            </Button>
             <Button
               variant="primary"
               size="m"
               disabled={busy !== null || !linked}
-              onClick={() => void connect()}
+              onClick={() => void sync()}
             >
-              {busy === 'connect' ? t('syncConnecting') : t('syncConnect')}
+              {busy === 'sync' ? t('syncSyncing') : t('syncNow')}
             </Button>
-            <span className={styles.hint}>{t('syncServerHint')}</span>
+            <span className={styles.hint}>{t('syncEnableHint')}</span>
           </div>
         </>
       )}
-
-      {linked ? (
-        <div className={styles.account}>
-          <span className={styles.accountName}>
-            {config.transport === 's3'
-              ? `${config.s3.bucket} · ${config.s3.prefix}`
-              : t('syncConnected')}
-          </span>
-          <span className={styles.device}>{config.deviceName}</span>
-          <span className={styles.spacer} />
-          <Button variant="primary" size="m" disabled={busy !== null} onClick={() => void sync()}>
-            {busy === 'sync' ? t('syncSyncing') : t('syncNow')}
-          </Button>
-          <Button
-            variant="outlined"
-            size="m"
-            disabled={busy !== null}
-            aria-pressed={config.enabled}
-            onClick={() => updateSync({ enabled: !config.enabled })}
-          >
-            {t('syncAuto')}
-            {config.enabled ? ' · ON' : ''}
-          </Button>
-          {config.transport === 'server' ? (
-            <Button
-              variant="outlined"
-              size="m"
-              disabled={busy !== null}
-              onClick={() => {
-                logoutSync()
-                setNotice(null)
-                setError(null)
-                showToast({ key: 'syncClearPassword' })
-              }}
-            >
-              {t('syncClearPassword')}
-            </Button>
-          ) : null}
-        </div>
-      ) : null}
 
       <div
         className={clsx(styles.status, (error || status.phase === 'error') && styles.statusError)}

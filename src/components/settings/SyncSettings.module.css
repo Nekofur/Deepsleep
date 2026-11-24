@@ -49,6 +49,32 @@
   gap: 8px;
 }
 
+.credential {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  padding: 6px 6px 6px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+}
+
+.credentialValue {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.credentialMissing {
+  color: var(--dsw-alias-label-caption);
+}
+
 .spacer {
   flex: 1;
 }

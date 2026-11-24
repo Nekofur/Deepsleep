@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { TranslationMessage } from '../../i18n/index.js'
 import { createId } from '../../utils/id.js'
+import { getToolsConfig } from '../providers/store.js'
 import { isS3Configured, type S3Config } from './s3.js'
 
 /** 同步通道：自建服务器，或直连 S3 兼容对象存储 */
@@ -16,15 +17,13 @@ const DEFAULT_S3: S3Config = {
   pathStyle: true,
 }
 
-/** 同步设置与进度，存 localStorage；本机存储只用一个密码，S3 直接保存凭据 */
+/** 同步设置与进度，存 localStorage；服务器通道复用工具服务的 API Key，S3 直接保存凭据 */
 export type SyncConfig = {
   transport: SyncTransportKind
   /** 自动同步：打开后定时同步，并在窗口重新可见时同步 */
   enabled: boolean
   /** 同步服务器地址，例如 http://localhost:8080 */
   serverUrl: string
-  /** 自建服务器的密码；请求时作为 Bearer 发送 */
-  password: string
   /** S3 直连配置（transport 为 s3 时使用） */
   s3: S3Config
   /** 本设备的稳定标识，用于生成与展示同步文件 */
@@ -109,7 +108,6 @@ const initial = (): SyncConfig => {
     transport: __SYNC_SERVER__ ? 'server' : 's3',
     enabled: false,
     serverUrl: '',
-    password: '',
     s3: { ...DEFAULT_S3 },
     deviceId: createId(),
     deviceName: detectDevice(),
@@ -130,7 +128,6 @@ const initial = (): SyncConfig => {
       transport: !__SYNC_SERVER__ || value.transport === 's3' ? 's3' : 'server',
       enabled: value.enabled === true,
       serverUrl: text(value.serverUrl),
-      password: text(value.password),
       s3: normalizeS3(value.s3),
       deviceId: text(value.deviceId) || fallback.deviceId,
       deviceName: text(value.deviceName) || fallback.deviceName,
@@ -153,17 +150,11 @@ export const updateSync = (patch: Partial<SyncConfig>) => {
 
 export const getSyncConfig = (): SyncConfig => get()
 
-/** 已配置同步通道：服务器需要密码，S3 需要完整的连接信息 */
+/** 已配置同步通道：服务器需要地址与工具服务 Key，S3 需要完整的连接信息 */
 export const isSyncLinked = (config = get()): boolean =>
   config.transport === 's3'
     ? isS3Configured(config.s3)
-    : Boolean(config.serverUrl.trim() && config.password)
-
-/** 清除密码：保留设备标识、删除记录与时间，重新填写后可继续增量合并 */
-export const logoutSync = () => {
-  set({ password: '', enabled: false })
-  write(get())
-}
+    : Boolean(config.serverUrl.trim() && getToolsConfig().apiKey)
 
 /** 删除会话时登记删除时间，其他设备同步时据此删除 */
 export const recordTombstone = (sessionId: string) => {

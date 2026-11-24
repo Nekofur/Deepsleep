@@ -37,7 +37,7 @@ The output is written to `dist/`. Deploy it to a static web server or open `dist
 - A separate tools service for search, fetch, OCR, speech recognition, and read-aloud, using the official DeepSeek `/v1/tools/*` APIs; it keeps working when the chat provider is not DeepSeek.
 - Upload, paste, or drag and drop attachments; use voice input and read replies aloud.
 - Markdown, syntax highlighting, KaTeX math, and Mermaid diagrams.
-- Optional conversation sync with two transports: a self-hosted server with a single password, or direct S3-compatible object storage with credentials you enter yourself. Compressed state plus per-file objects, per-session merge, and deletion propagation.
+- Optional conversation sync with two transports: a self-hosted server that identifies users by their tools service API key, or direct S3-compatible object storage with credentials you enter yourself. Compressed state plus per-file objects, per-session merge, and deletion propagation.
 - Simplified Chinese and English, light and dark themes, mobile layouts, location settings, and chat history import and export.
 
 ## Providers and protocols
@@ -64,7 +64,7 @@ Settings → Tools configures one endpoint and key for the official DeepSeek too
 
 ## Session sync
 
-Settings → Sync keeps conversations in sync across devices with two interchangeable transports: a self-hosted server guarded by a single password, or direct S3-compatible object storage with credentials you enter yourself. Both share the same merge engine and conflict detection.
+Settings → Sync keeps conversations in sync across devices with two interchangeable transports: a self-hosted server keyed by your tools service API key, or direct S3-compatible object storage with credentials you enter yourself. Both share the same merge engine and conflict detection.
 
 ### Storage layout
 
@@ -78,16 +78,19 @@ A sync downloads only the small state file, merges it per session id (newest `up
 ### Self-hosted server
 
 ```sh
-SYNC_PASSWORD="change-me" pnpm sync
+SYNC_API_ORIGIN="https://api.deepseek.com" pnpm sync
 ```
 
-| Variable        | Default        | Purpose                                     |
-| --------------- | -------------- | ------------------------------------------- |
-| `PORT`          | `8080`         | Listen port                                 |
-| `SYNC_PASSWORD` | `demo`         | The only credential; sent as a Bearer token |
-| `SYNC_DATA_DIR` | `./.sync-data` | State and image files                       |
+Sync uses the tools service API key as its identity. The server verifies the key with the provider once (cached for ten minutes) through `GET /models`, then keeps each key in its own directory named after the key's SHA-256 — different keys are isolated users, and the raw key is never written to disk. In Settings → Sync choose the server transport, enter the URL, and turn on **Enable sync**: a sync runs immediately and then every five minutes.
 
-The server exposes `GET/PUT /api/sync/state` (ETag preconditions) and `GET/PUT /api/sync/files/{id}`, enables CORS for browser clients, and stores plain files that can be backed up or put behind HTTPS with a reverse proxy. The client accepts `host:port` as well as a full `http(s)://` URL.
+| Variable           | Default                    | Purpose                                                                                |
+| ------------------ | -------------------------- | -------------------------------------------------------------------------------------- |
+| `PORT`             | `8080`                     | Listen port                                                                            |
+| `SYNC_DATA_DIR`    | `./.sync-data`             | Users, state files and image originals                                                 |
+| `SYNC_API_ORIGIN`  | `https://api.deepseek.com` | Origin used to verify keys (`GET /models`)                                             |
+| `SYNC_ADMIN_TOKEN` | unset                      | Enables `GET /api/admin/users` and `DELETE /api/admin/users/{id}` with `X-Admin-Token` |
+
+The server exposes `GET/PUT /api/sync/state` (ETag preconditions), `GET/PUT /api/sync/files/{id}` and `GET /api/sync/me`, enables CORS for browser clients, and stores plain files that can be backed up or put behind HTTPS with a reverse proxy. The client accepts `host:port` as well as a full `http(s)://` URL.
 
 ### Direct S3
 
@@ -112,7 +115,7 @@ Conditional writes use `If-None-Match: *` for the first upload and `If-Match` af
 
 ## Data and storage
 
-Provider keys, settings, the sync password or S3 credentials, and sync bookkeeping live in the browser's localStorage. Conversations and original attachments are stored in IndexedDB. Local data is isolated by browser profile and site origin. Sending messages, uploading attachments, and using speech features sends the relevant content to the configured provider; syncing sends conversations to your sync server or bucket.
+Provider keys, settings, the tools service key or S3 credentials, and sync bookkeeping live in the browser's localStorage. Conversations and original attachments are stored in IndexedDB. Local data is isolated by browser profile and site origin. Sending messages, uploading attachments, and using speech features sends the relevant content to the configured provider; syncing sends conversations to your sync server or bucket.
 
 History import and export in Settings use ZIP archives in the DeepSeek export format. After confirmation and successful validation, importing replaces all local conversations and attachments. Exports include conversations and locally available original images, but exclude API keys, settings, and original non-image attachments. See the [history import/export documentation (Chinese)](src/services/chat/history/README.md) for the archive format and preservation details.
 
@@ -132,16 +135,17 @@ Conversation sync is optional:
 - **Self-hosted server**: run the bundled zero-dependency server with Node.js 18 or newer:
 
   ```sh
-  SYNC_PASSWORD='a-long-random-password' SYNC_DATA_DIR=/var/lib/deepsleep PORT=8080 node server/sync-server.mjs
+  SYNC_DATA_DIR=/var/lib/deepsleep PORT=8080 SYNC_ADMIN_TOKEN='admin-secret' node server/sync-server.mjs
   ```
 
-  Put it behind HTTPS (Caddy or nginx) and keep `SYNC_DATA_DIR` on a persistent volume; back up `state.json.gz` and `files/`. The server has a single shared password rather than accounts, so anyone with the password can read and write the sync data — use a long random value.
+  Put it behind HTTPS (Caddy or nginx) and keep `SYNC_DATA_DIR` on a persistent volume. Each user is derived from the tools service API key they already configure in the app; the server calls the provider's `/models` endpoint to verify the key and stores only its SHA-256. Back up `users/` (each user has `state.json.gz` and `files/`). If `SYNC_ADMIN_TOKEN` is set, `GET /api/admin/users` lists users with size and revision, and `DELETE /api/admin/users/{id}` removes one.
 
-| Variable        | Default        | Purpose                                 |
-| --------------- | -------------- | --------------------------------------- |
-| `PORT`          | `8080`         | Listen port                             |
-| `SYNC_PASSWORD` | `demo`         | Shared password, sent as a Bearer token |
-| `SYNC_DATA_DIR` | `./.sync-data` | State file and image originals          |
+| Variable           | Default                    | Purpose                                    |
+| ------------------ | -------------------------- | ------------------------------------------ |
+| `PORT`             | `8080`                     | Listen port                                |
+| `SYNC_DATA_DIR`    | `./.sync-data`             | Users, state files and image originals     |
+| `SYNC_API_ORIGIN`  | `https://api.deepseek.com` | Origin used to verify keys                 |
+| `SYNC_ADMIN_TOKEN` | unset                      | Admin token for the user management routes |
 
 ## Development
 

@@ -1,10 +1,11 @@
 /**
- * Messages API（Anthropic 兼容格式）协议类型，只取本应用用到的部分。
- * 文档：https://api-docs.deepseek.com/zh-cn/api/create-message
- * 声明 deepseek_web_search / deepseek_read_url 或设置 safety_check.level 为 high 时进入扩展模式。
+ * 流式事件与消息块的规范类型：协议适配层（services/api/protocols）把各家接口的响应
+ * 转换成这里定义的 MessageStreamEvent，界面与存储只依赖这一层。
+ *
+ * 请求侧同样是规范格式：ChatRequest 交给适配器后由它翻译成 Anthropic Messages、
+ * OpenAI Chat Completions / Responses 或 Gemini generateContent 的请求体。
+ * 服务端工具块（deepseek_web_search / deepseek_read_url）只在 DeepSeek 扩展下产生。
  */
-
-export type ChatModel = 'deepseek-flash' | 'deepseek-v4-pro'
 
 // ---------- 响应：内容块 ----------
 
@@ -126,12 +127,15 @@ export type ToolUseBlock = { type: 'tool_use'; id: string; name: string; input: 
 export type TextBlockParam = { type: 'text'; text: string }
 
 /**
- * 文件块：引用经 Files API 上传的文件，图片用 image、其余用 document；
- * 图片请求需带 anthropic-beta: files-api-2025-04-14；扩展模式不支持 document，返回 400。
+ * 文件块：图片用 image、其余用 document。
+ * - file：引用经 Files API 上传的文件，需带相应 beta 头；
+ * - local：没有可引用的文件 ID，由适配器读取本地原件后内联为 base64。
+ * source 为 file 时也带上 local，供不支持 Files API 的协议改为内联。
  */
 export type FileBlockParam = {
   type: 'image' | 'document'
-  source: { type: 'file'; file_id: string }
+  source: { type: 'file'; file_id: string } | { type: 'local'; id: string; media_type: string }
+  local?: { id: string; media_type: string }
 }
 
 /** 接口接受的调用块；历史只回传 kind 为 read_link 的调用 */
@@ -172,14 +176,36 @@ export type DeepseekReadUrlTool = {
   name: 'deepseek_read_url'
 }
 
-export type CreateMessageRequest = {
-  model: ChatModel
+/**
+ * 思考等级：界面可选，适配器翻译成各家的参数
+ * （OpenAI 的 reasoning_effort、Anthropic 的 budget_tokens、Gemini 的 thinkingBudget 等）。
+ */
+export type ThinkingLevel = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+
+export const THINKING_LEVELS: readonly ThinkingLevel[] = [
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+]
+
+/**
+ * 规范请求：协议无关的部分，由适配器翻译成服务端格式。
+ * thinking / search / title 对应界面开关，适配器按供应商能力决定是否下发。
+ */
+export type ChatRequest = {
+  model: string
   system: string
   messages: MessageParam[]
-  thinking: { type: 'enabled' | 'disabled' }
-  tools: (DeepseekWebSearchTool | DeepseekReadUrlTool)[]
-  safety_check: { level: 'high' }
-  title?: { enabled: boolean }
+  thinking: boolean
+  /** 深度思考的强度；不支持分级的供应商只使用 thinking 开关 */
+  thinkingLevel: ThinkingLevel
+  /** 联网搜索：DeepSeek 用 deepseek_web_search，客户端工具用 Search 接口补齐 */
+  search: boolean
+  /** 请求服务端生成会话标题（仅 DeepSeek 扩展支持） */
+  title: boolean
 }
 
 // ---------- 响应：流式事件 ----------

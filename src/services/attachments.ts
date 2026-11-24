@@ -1,11 +1,13 @@
 import { create } from 'zustand'
 import type { LinkedMessage, TranslationMessage } from '../i18n/index.js'
-import { isUploadImageOversized } from '../utils/resizeUploadImage.js'
-import { uploadFile } from './api/client.js'
+import { isUploadImageOversized, resizeUploadImage } from '../utils/resizeUploadImage.js'
+import { uploadFile } from './api/protocols/anthropic.js'
 import { classifyApiError, getUploadErrorInfo, isRetryableApiError } from './api/errors.js'
 import type { FilePurpose } from './api/types.js'
 import { loadFile } from './chat/db.js'
 import type { FileAttachment } from './chat/types.js'
+import { getProviderFeatures, getProviderExtensions } from './providers/store.js'
+import type { ProviderConfig } from './providers/types.js'
 import { ACCEPT_FILE_EXTS } from './uploadExts.js'
 
 /** 允许上传的扩展名，按扩展名白名单过滤，清单见 uploadExts.ts */
@@ -121,7 +123,7 @@ const next = () => {
 
 /** 排队上传，最多同时上传 MAX_CONCURRENT 个；排队期间中止的任务不会发出请求 */
 const enqueueUpload = (
-  apiKey: string,
+  provider: ProviderConfig,
   file: Blob,
   name: string,
   isImage: boolean,
@@ -134,8 +136,23 @@ const enqueueUpload = (
         return
       }
       try {
-        const body = file instanceof File ? file : new File([file], name, { type: file.type })
-        resolve((await uploadFile(apiKey, body, getUploadPurpose(name, isImage), signal)).id)
+        const purpose = getUploadPurpose(name, isImage)
+        const body =
+          purpose === null
+            ? await resizeUploadImage(new File([file], name, { type: file.type }), signal)
+            : file
+        const uploaded = await uploadFile(
+          {
+            baseUrl: provider.baseUrl,
+            apiKey: provider.apiKey,
+            deepseek: getProviderExtensions(provider).deepseek,
+          },
+          name,
+          body,
+          purpose,
+          signal
+        )
+        resolve(uploaded.id)
       } catch (error) {
         reject(error)
       }
@@ -147,10 +164,11 @@ const enqueueUpload = (
  * 上传任务按附件的本地 id 登记：输入框选中即开始上传，全部成功后携带 serverId 发送，
  * 不会重复上传；导入的历史附件没有任务，发送前按本地原件补传。
  * 任务只在内存里，历史附件补传未完成时，刷新后会在下次请求前重新上传。
+ * 不支持 Files API 的供应商直接标记完成，附件在请求时内联。
  */
 export type UploadTask =
   | { status: 'uploading' }
-  | { status: 'done'; serverId: string }
+  | { status: 'done'; serverId: string | null }
   | { status: 'error'; error: TranslationMessage; retryable: boolean }
 
 type UploadState = { tasks: Record<string, UploadTask> }
@@ -164,23 +182,30 @@ const setTask = (id: string, task: UploadTask | null) =>
       : Object.fromEntries(Object.entries(state.tasks).filter(([key]) => key !== id)),
   }))
 
-const pending = new Map<string, { promise: Promise<string>; controller: AbortController }>()
+const pending = new Map<string, { promise: Promise<string | null>; controller: AbortController }>()
 
-/** 开始（或复用进行中的）上传，返回服务端 file_id；失败时任务记为 error 并抛出原错误 */
+/**
+ * 开始（或复用进行中的）上传，返回服务端 file_id；失败时任务记为 error 并抛出原错误。
+ * 供应商不支持 Files API 时不发请求，任务直接完成、serverId 为 null，附件随请求内联。
+ */
 export const uploadAttachment = (
-  apiKey: string,
+  provider: ProviderConfig,
   id: string,
   blob: Blob,
   name: string,
   isImage: boolean
-): Promise<string> => {
+): Promise<string | null> => {
   const current = pending.get(id)
   if (current) {
     return current.promise
   }
+  if (getProviderFeatures(provider).files !== 'api' || !provider.apiKey) {
+    setTask(id, { status: 'done', serverId: null })
+    return Promise.resolve(null)
+  }
   const controller = new AbortController()
   setTask(id, { status: 'uploading' })
-  const promise = enqueueUpload(apiKey, blob, name, isImage, controller.signal)
+  const promise = enqueueUpload(provider, blob, name, isImage, controller.signal)
     .then((serverId) => {
       setTask(id, { status: 'done', serverId })
       return serverId

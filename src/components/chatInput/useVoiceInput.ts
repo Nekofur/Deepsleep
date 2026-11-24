@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { TranslationMessage } from '../../i18n/index.js'
 import { transcribe } from '../../services/api/speech.js'
+import { getToolsEndpoint } from '../../services/providers/store.js'
 import { startRecording, type Recording } from '../../services/speech/recorder.js'
-import { useSettings } from '../../services/settings.js'
 import { showToast } from '../base/toastState.js'
 
 export type VoiceInputStatus = 'idle' | 'recording' | 'transcribing'
@@ -75,7 +75,13 @@ export const useVoiceInput = (onText: (text: string) => void) => {
       controller = new AbortController()
       controllerRef.current = controller
       setStatus('transcribing')
-      const text = await transcribe(useSettings.getState().apiKey ?? '', audio, controller.signal)
+      // 语音识别由设置中的工具服务提供（官方 DeepSeek）
+      const endpoint = getToolsEndpoint()
+      if (!endpoint) {
+        showToast({ key: 'voiceInputFailed' })
+        return
+      }
+      const text = await transcribe(endpoint, audio, controller.signal)
       if (controller.signal.aborted || operationRef.current !== operation) {
         return
       }

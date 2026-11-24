@@ -9,6 +9,7 @@ import {
   validateFiles,
   type UploadTask,
 } from '../attachments.js'
+import { getActiveProvider } from '../providers/store.js'
 import type { FileAttachment } from './types.js'
 
 export type DraftAttachment = {
@@ -45,10 +46,15 @@ const updateDraft = (sessionId: string | null, update: (draft: Draft) => Draft) 
 export const setDraftText = (sessionId: string | null, text: string) =>
   updateDraft(sessionId, (draft) => ({ ...draft, text }))
 
-const upload = (attachment: DraftAttachment, apiKey: string) => {
-  // 上传任务负责记录错误，输入框的附件卡片展示失败及重试入口。
+const upload = (attachment: DraftAttachment) => {
+  const provider = getActiveProvider()
+  if (!provider) {
+    return
+  }
+  // 上传任务负责记录错误，输入框的附件卡片展示失败及重试入口；
+  // 不支持 Files API 的供应商不发请求，发送时再内联。
   void uploadAttachment(
-    apiKey,
+    provider,
     attachment.id,
     attachment.file,
     attachment.file.name,
@@ -59,8 +65,7 @@ const upload = (attachment: DraftAttachment, apiKey: string) => {
 /** 整批校验通过后才加入草稿并开始上传。 */
 export const addDraftFiles = (
   sessionId: string | null,
-  files: File[],
-  apiKey: string
+  files: File[]
 ): TranslationMessage | null => {
   if (files.length === 0) {
     return null
@@ -77,31 +82,27 @@ export const addDraftFiles = (
     })
   )
   updateDraft(sessionId, (draft) => ({ ...draft, attachments: [...draft.attachments, ...added] }))
-  added.forEach((attachment) => upload(attachment, apiKey))
+  added.forEach(upload)
   return null
 }
 
-export const retryDraftAttachment = (
-  sessionId: string | null,
-  attachmentId: string,
-  apiKey: string
-) => {
+export const retryDraftAttachment = (sessionId: string | null, attachmentId: string) => {
   const attachment = getDraft(sessionId).attachments.find((item) => item.id === attachmentId)
   if (attachment) {
-    upload(attachment, apiKey)
+    upload(attachment)
   }
 }
 
-/** 发送按钮和实际提交共用规则：有内容，且全部附件已上传成功。 */
+/** 发送按钮和实际提交共用规则：有内容，且全部附件已处理完成。 */
 export const prepareDraftMessage = (draft: Draft, tasks: Record<string, UploadTask>) => {
   const text = draft.text.trim()
   if (!text && draft.attachments.length === 0) {
     return null
   }
-  const files: (FileAttachment & { serverId: string; blob: Blob })[] = []
+  const files: (FileAttachment & { blob: Blob })[] = []
   for (const attachment of draft.attachments) {
     const task = tasks[attachment.id]
-    if (task?.status !== 'done' || !task.serverId) {
+    if (task?.status !== 'done') {
       return null
     }
     files.push({

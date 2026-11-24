@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { ThinkingLevel } from './api/types.js'
 import type { TtsVoice } from './api/speech.js'
 import { normalizeLocation, type UserLocation } from './location.js'
 
@@ -7,25 +8,26 @@ export type Locale = 'zh-CN' | 'en-US'
 /** 主题偏好；默认跟随系统 */
 export type ThemePreference = 'light' | 'dark' | 'system'
 
-/** 本机设置，存 localStorage：API Key、语言、主题、位置、朗读音色、深度思考与智能搜索开关、侧边栏收起状态 */
+/** 本机设置，存 localStorage：语言、主题、位置、朗读音色、思考等级与开关、侧边栏收起状态 */
 type Settings = {
-  apiKey: string | null
   locale: Locale
   themePreference: ThemePreference
   location: UserLocation | null
   ttsVoice: TtsVoice
   thinking: boolean
+  /** 深度思考的强度，默认 medium */
+  thinkingLevel: ThinkingLevel
   search: boolean
   siderCollapsed: boolean
 }
 
 const KEYS = {
-  apiKey: 'chat-demo:api-key',
   locale: 'chat-demo:locale',
   location: 'chat-demo:location',
   themePreference: 'chat-demo:theme-preference',
   ttsVoice: 'chat-demo:tts-voice',
   thinking: 'chat-demo:thinking',
+  thinkingLevel: 'chat-demo:thinking-level',
   search: 'chat-demo:search',
   siderCollapsed: 'chat-demo:sider-collapsed',
 } as const
@@ -87,13 +89,24 @@ const initialThemePreference = (): ThemePreference => {
 /** 未保存过时使用服务端默认音色 stella（海星） */
 const initialTtsVoice = (): TtsVoice => (read(KEYS.ttsVoice) === 'tide' ? 'tide' : 'stella')
 
+const initialThinkingLevel = (): ThinkingLevel => {
+  const saved = read(KEYS.thinkingLevel)
+  return saved === 'minimal' ||
+    saved === 'low' ||
+    saved === 'high' ||
+    saved === 'xhigh' ||
+    saved === 'max'
+    ? saved
+    : 'medium'
+}
+
 export const useSettings = create<Settings>(() => ({
-  apiKey: read(KEYS.apiKey),
   locale: initialLocale(),
   location: initialLocation(),
   themePreference: initialThemePreference(),
   ttsVoice: initialTtsVoice(),
   thinking: read(KEYS.thinking) === 'true',
+  thinkingLevel: initialThinkingLevel(),
   search: read(KEYS.search) === 'true',
   siderCollapsed: read(KEYS.siderCollapsed) === 'true',
 }))
@@ -119,14 +132,14 @@ export const setTtsVoice = (ttsVoice: TtsVoice) => {
   useSettings.setState({ ttsVoice })
 }
 
-export const setApiKey = (apiKey: string | null) => {
-  write(KEYS.apiKey, apiKey)
-  useSettings.setState({ apiKey })
-}
-
 export const setThinking = (thinking: boolean) => {
   write(KEYS.thinking, String(thinking))
   useSettings.setState({ thinking })
+}
+
+export const setThinkingLevel = (thinkingLevel: ThinkingLevel) => {
+  write(KEYS.thinkingLevel, thinkingLevel)
+  useSettings.setState({ thinkingLevel })
 }
 
 export const setSearch = (search: boolean) => {

@@ -21,12 +21,15 @@ type ConfigOptions = {
   apiOrigin?: string
   /** 开发服务器配置，支持本地接口代理 */
   devServer?: Configuration['devServer']
+  /** 是否包含自建同步服务器通道；为 false 时构建纯前端、仅支持 S3 的版本 */
+  syncServer?: boolean
 }
 
 /** 创建构建配置，支持自定义 API 地址和开发服务器选项 */
 export const createConfig = ({
   apiOrigin = 'https://api.deepseek.com',
   devServer,
+  syncServer = true,
 }: ConfigOptions = {}): Configuration => ({
   mode: dev ? 'development' : 'production',
   entry: './src/main.tsx',
@@ -80,7 +83,11 @@ export const createConfig = ({
       scriptLoading: 'defer',
       meta: { 'application-version': version },
     }),
-    new rspack.DefinePlugin({ __API_ORIGIN__: JSON.stringify(apiOrigin) }),
+    new rspack.DefinePlugin({
+      __API_ORIGIN__: JSON.stringify(apiOrigin),
+      // 纯前端构建关闭自建服务器同步通道，只保留 S3
+      __SYNC_SERVER__: JSON.stringify(syncServer),
+    }),
     new rspack.CopyRspackPlugin({
       patterns: [{ from: path.resolve(root, 'LICENSE'), to: 'LICENSE', toType: 'file' }],
     }),
@@ -90,4 +97,10 @@ export const createConfig = ({
 })
 
 // eslint-disable-next-line import/no-default-export
-export default defineConfig(createConfig())
+export default defineConfig(
+  createConfig({
+    // 部署到自建代理时用 API_ORIGIN 覆盖默认的 DeepSeek 地址
+    apiOrigin: process.env.API_ORIGIN || undefined,
+    syncServer: process.env.SYNC_SERVER !== '0',
+  })
+)

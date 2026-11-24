@@ -6,6 +6,9 @@ import {
   IconDownloadOutline16,
   IconFollowsystemOutline16,
   IconLightOutline16,
+  IconLinkOutline16,
+  IconRefreshOutline16,
+  IconSearchOutline16,
   IconSettingsOutline16,
   IconUploadOutline14,
 } from '../base/icons.js'
@@ -15,7 +18,6 @@ import {
   exportHistory,
   importHistory,
 } from '../../services/chat/backup.js'
-import { useIsMobile } from '../../app/viewport.js'
 import { useChatStore } from '../../services/chat/store.js'
 import { regionCodes, getRegionName, provinces } from '../../services/location.js'
 import {
@@ -23,22 +25,27 @@ import {
   setLocale,
   setLocation,
   setThemePreference,
+  setThinkingLevel,
   setTtsVoice,
   useSettings,
   type ThemePreference,
 } from '../../services/settings.js'
+import { THINKING_LEVELS, type ThinkingLevel } from '../../services/api/types.js'
 import { useTranslate, type TranslationKey, type TranslationMessage } from '../../i18n/index.js'
 import { Button } from '../base/Button.js'
 import { Modal } from '../base/Modal.js'
 import { Select } from '../base/Select.js'
 import { showToast } from '../base/toastState.js'
-import { ApiKeyConfirm, ApiKeyField, useApiKeyEditor } from './ApiKeyField.js'
+import { ProviderSettings } from './ProviderSettings.js'
+import { SyncSettings } from './SyncSettings.js'
+import { ToolsSettings } from './ToolsSettings.js'
 import { closeSettings, useSettingsDialog, type SettingsSection } from './settingsDialogState.js'
 import styles from './Settings.module.css'
 
 /**
- * 设置弹窗：分「通用设置」（主题、语言、朗读音色、位置）与「数据管理」（API Key、导入、导出、删除）。
- * 桌面端为居中弹窗、左侧导航；移动端为底部弹层、导航横排在内容上方
+ * 设置弹窗：分「通用设置」（主题、语言、朗读音色、位置）、「模型服务」（供应商、协议与 Key）、
+ * 「会话同步」与「数据管理」（导入、导出、删除）。桌面端为居中弹窗、左侧导航；
+ * 移动端为底部弹层、导航横排在内容上方
  */
 export const SettingsDialog = () => {
   const open = useSettingsDialog((state) => state.open)
@@ -51,16 +58,28 @@ const sections: { value: SettingsSection; label: TranslationKey; icon: ReactNode
     label: 'settingDialogAsideGeneralOptionLabel',
     icon: <IconSettingsOutline16 />,
   },
+  {
+    value: 'providers',
+    label: 'settingDialogAsideProvidersOptionLabel',
+    icon: <IconLinkOutline16 />,
+  },
+  {
+    value: 'tools',
+    label: 'settingDialogAsideToolsOptionLabel',
+    icon: <IconSearchOutline16 />,
+  },
+  {
+    value: 'sync',
+    label: 'settingDialogAsideSyncOptionLabel',
+    icon: <IconRefreshOutline16 />,
+  },
   { value: 'data', label: 'settingDialogAsideDataOptionLabel', icon: <IconDataOutline16 /> },
 ]
 
 const SettingsContent = () => {
   const t = useTranslate()
-  const isMobile = useIsMobile()
   // 打开时按调用方指定的分组选中，之后在弹窗内切换
   const [section, setSection] = useState(() => useSettingsDialog.getState().section)
-  // 切换分组不丢失正在输入的 API Key 与导入状态
-  const apiKeyEditor = useApiKeyEditor()
   const historyImport = useHistoryImport()
   const historyDelete = useHistoryDelete()
   const replacingHistory = useChatStore((state) => state.importingHistory)
@@ -98,12 +117,18 @@ const SettingsContent = () => {
             <>
               <ThemeSetting />
               <LocaleSetting />
+              <ThinkingLevelSetting />
               <TtsVoiceSetting />
               <LocationSetting />
             </>
+          ) : section === 'providers' ? (
+            <ProviderSettings />
+          ) : section === 'tools' ? (
+            <ToolsSettings />
+          ) : section === 'sync' ? (
+            <SyncSettings />
           ) : (
             <>
-              <ApiKeyField editor={apiKeyEditor} />
               <ImportHistory historyImport={historyImport} disabled={historyBusy} />
               <ExportHistory disabled={historyBusy} />
               <SettingCell
@@ -121,7 +146,6 @@ const SettingsContent = () => {
                   </Button>
                 }
               />
-              {isMobile ? <ApiKeyConfirm editor={apiKeyEditor} /> : null}
             </>
           )}
         </div>
@@ -308,6 +332,39 @@ const TtsVoiceSetting = () => {
             { value: 'tide', label: t('settingsTtsVoiceTide') },
           ]}
           onChange={setTtsVoice}
+        />
+      }
+    />
+  )
+}
+
+/** 思考等级：深度思考打开时生效，各协议换算成自己的参数 */
+const thinkingLevelLabels: Record<ThinkingLevel, TranslationKey> = {
+  minimal: 'thinkingLevelMinimal',
+  low: 'thinkingLevelLow',
+  medium: 'thinkingLevelMedium',
+  high: 'thinkingLevelHigh',
+  xhigh: 'thinkingLevelXhigh',
+  max: 'thinkingLevelMax',
+}
+
+const ThinkingLevelSetting = () => {
+  const t = useTranslate()
+  const thinkingLevel = useSettings((state) => state.thinkingLevel)
+  return (
+    <SettingCell
+      label={t('settingsThinkingLevel')}
+      description={t('settingsThinkingLevelDescription')}
+      status={null}
+      action={
+        <Select
+          ariaLabel={t('settingsThinkingLevel')}
+          value={thinkingLevel}
+          options={THINKING_LEVELS.map((level) => ({
+            value: level,
+            label: t(thinkingLevelLabels[level]),
+          }))}
+          onChange={setThinkingLevel}
         />
       }
     />

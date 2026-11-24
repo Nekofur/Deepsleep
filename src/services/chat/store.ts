@@ -1,8 +1,11 @@
 import { create } from 'zustand'
 import { createId } from '../../utils/id.js'
-import { ApiError, streamMessage } from '../api/client.js'
-import type { ChatModel, CreateMessageRequest } from '../api/types.js'
+import { ApiError } from '../api/client.js'
 import { extractFileIds, getFileErrorCode, isRetryableApiError } from '../api/errors.js'
+import { readInline } from '../api/protocols/inline.js'
+import { getAdapter } from '../api/protocols/index.js'
+import type { AttachmentLoader } from '../api/protocols/types.js'
+import type { ChatRequest } from '../api/types.js'
 import {
   cancelUpload,
   checkImageFileIds,
@@ -10,8 +13,20 @@ import {
   uploadAttachment,
   useUploads,
 } from '../attachments.js'
+import {
+  getActiveProvider,
+  getProviderExtensions,
+  getProviderFeatures,
+  getToolsEndpoint,
+  isProviderUsable,
+  isToolsUsable,
+} from '../providers/store.js'
+import type { ProviderConfig } from '../providers/types.js'
 import { useSettings } from '../settings.js'
+import { extractUrls, runClientTools } from './clientTools.js'
 import { appendBranch, getVisibleMessages, normalizeSession, selectVersion } from './branches.js'
+import { recordTombstone } from '../sync/store.js'
+import { SyncError } from '../sync/errors.js'
 import * as db from './db.js'
 import {
   clearAllDrafts,
@@ -38,32 +53,32 @@ import {
   type UserMessage,
 } from './types.js'
 
-/** deepseek-flash 同时支持深度思考与图片输入 */
-const MODEL: ChatModel = 'deepseek-flash'
 /** 所有生成请求统一携带的助手身份说明 */
-const SYSTEM_PROMPT = '该助手为DeepSeek，由深度求索公司创造。'
+const SYSTEM_PROMPT = 'You are a helpful assistant.'
 /** 保留最近打开的详情；当前会话、生成中及尚未成功保存的会话不淘汰。 */
 const SESSION_CACHE_LIMIT = 5
-/** 安全审核固定开启，所有请求都走扩展模式 */
-const SAFETY_CHECK = { level: 'high' } as const
 /** 服务端判定 file_id 失效后，重新补传并重发的最多次数（不含首次请求） */
 const FILE_RETRY_LIMIT = 2
 /** 退避基数，第 n 次重试等待 2^n 倍；连续失败达到上限就放弃，把原始报错展示出来 */
 const FILE_RETRY_BASE_DELAY = 1000
-
-/** 阅读链接始终开启，智能搜索开关控制是否另行声明搜索工具（含边想边搜）。 */
-const serverTools = (search: boolean): CreateMessageRequest['tools'] => {
-  const tools: CreateMessageRequest['tools'] = [
-    { type: 'deepseek_read_url', name: 'deepseek_read_url' },
-  ]
-  if (search) {
-    tools.push({ type: 'deepseek_web_search', name: 'deepseek_web_search' })
-  }
-  return tools
-}
+/** 本地生成的标题上限，超出截断 */
+const TITLE_LENGTH = 24
 
 /** 允许自动补标题的请求；手动重命名后取消本轮标题写入，包含主动清空标题的情况。 */
 const titleRequests = new Set<AbortController>()
+
+/** 读取附件原件并转成内联内容；供应商不支持 Files API 时由协议适配器调用 */
+const loadAttachment: AttachmentLoader = async ({ id, mediaType }) => {
+  const blob = await db.loadFile(id).catch(() => undefined)
+  return blob ? readInline(blob, mediaType) : null
+}
+
+/** 供应商不提供标题时，用首条提问的摘要作为会话标题 */
+const titleFromQuestion = (content: string) => {
+  const text = content.replace(/\s+/g, ' ').trim()
+  const chars = [...text]
+  return chars.length > TITLE_LENGTH ? `${chars.slice(0, TITLE_LENGTH).join('')}…` : text
+}
 
 type ChatState = {
   ready: boolean
@@ -259,16 +274,20 @@ export const bindChatPersistence = () => {
   }
 }
 
-/** 按当前开关创建回复：深度思考对应 thinking，智能搜索控制 deepseek_web_search。 */
+/** 按当前开关和供应商创建回复：不支持的能力关闭开关，避免请求里带上无效字段 */
 const createReply = (): AssistantMessage => {
   const { thinking, search } = useSettings.getState()
+  const provider = getActiveProvider()
+  const features = provider ? getProviderFeatures(provider) : null
+  // 服务端搜索按供应商能力；供应商不支持时由工具服务在客户端完成
+  const searchSupported = features ? features.search || isToolsUsable() : isToolsUsable()
   return {
     id: createId(),
     role: 'assistant',
     createdAt: Date.now(),
-    model: MODEL,
-    thinking,
-    search,
+    model: provider?.model ?? null,
+    thinking: features ? thinking && features.thinking : thinking,
+    search: search && searchSupported,
     prefix: true,
     status: 'pending',
     blocks: [],
@@ -507,6 +526,8 @@ const removeSessionData = async (id: string): Promise<boolean> => {
       return false
     }
     await db.deleteSession(id)
+    // 删除成功后登记删除时间，其他设备同步时会据此删除同一会话
+    recordTombstone(id)
     if (epoch !== historyEpoch) {
       return true
     }
@@ -597,8 +618,8 @@ export const sendMessage = (targetSessionId: string | null) => {
     files: files.map(({ id, serverId, name, size, isImage, mimeType }) => ({
       id,
       serverId,
-      // 草稿附件已上传成功，每张图片都在上传前检查过长边，超限的已缩小。
-      imageSizeChecked: isImage,
+      // Files API 上传前会检查长边；内联供应商不留上传副本。
+      imageSizeChecked: isImage && serverId !== null,
       name,
       size,
       isImage,
@@ -716,8 +737,8 @@ export const continueReply = (sessionId: string, messageId: string) => {
   const { thinking, search } = useSettings.getState()
   const reply: AssistantMessage = {
     ...previous,
-    // 未记录请求配置的回复，续写时使用默认模型和当前开关。
-    model: previous.model ?? MODEL,
+    // 未记录请求配置的回复，续写时使用当前选中的模型和开关。
+    model: previous.model ?? getActiveProvider()?.model ?? null,
     thinking: previous.thinking ?? thinking,
     search: previous.search ?? search,
     status: 'pending',
@@ -788,21 +809,24 @@ const saveServerIds = (sessionId: string, serverIds: ReadonlyMap<string, string 
 
 /**
  * 附件的服务端 id：已有直接用；正在上传的等待同一任务；否则读取本地原件补传。
- * 本地也没有原件（导入的文档附件只有元数据）时返回 null，该附件只展示、不进入请求。
+ * 本地也没有原件（导入的文档附件只有元数据）时返回 null，该附件在内联供应商下被跳过。
  */
-const ensureServerId = async (apiKey: string, file: FileAttachment): Promise<string | null> => {
+const ensureServerId = async (
+  provider: ProviderConfig,
+  file: FileAttachment
+): Promise<string | null> => {
   if (file.serverId) {
     return file.serverId
   }
   const task = useUploads.getState().tasks[file.id]
-  if (task?.status === 'done') {
+  if (task?.status === 'done' && task.serverId) {
     return task.serverId
   }
   const blob = await db.loadFile(file.id)
   if (!blob) {
     return null
   }
-  return uploadAttachment(apiKey, file.id, blob, file.name, file.isImage)
+  return uploadAttachment(provider, file.id, blob, file.name, file.isImage)
 }
 
 /** 用会话里的最新消息替换请求快照：重传前会重置附件的 serverId，快照必须跟着更新 */
@@ -827,12 +851,20 @@ const refreshRequest = (sessionId: string, request: Request): Request => {
  * - 历史轮次（仅进入上下文的）中没有 serverId 的附件，多为导入的图片：从最新的消息往前逐张补传，
  *   失败静默跳过，该附件不进入本次请求，下次发送时再试。
  */
-const prepareFiles = async (sessionId: string, request: Request, signal: AbortSignal) => {
+const prepareFiles = async (
+  sessionId: string,
+  request: Request,
+  signal: AbortSignal,
+  provider: ProviderConfig
+) => {
+  // 不支持 Files API 的供应商随请求内联附件，不需要预先上传。
+  if (getProviderFeatures(provider).files !== 'api') {
+    return request
+  }
   const epoch = historyEpoch
   // 服务端判定 file_id 失效时会清掉会话里的 serverId，先用最新消息替换请求快照，
   // 否则快照里仍是旧 id，补传会直接复用它。
   request = refreshRequest(sessionId, request)
-  const apiKey = useSettings.getState().apiKey ?? ''
   const serverIds = new Map<string, string>()
   // 停止生成立即生效；上传本身不取消（输入框与其他消息可能共用同一任务），完成后照常写回 serverId
   const aborted = new Promise<never>((_, reject) => {
@@ -850,7 +882,7 @@ const prepareFiles = async (sessionId: string, request: Request, signal: AbortSi
   }
   const uploads = Promise.allSettled(
     request.question.files.map(async (file) => {
-      const serverId = await ensureServerId(apiKey, file)
+      const serverId = await ensureServerId(provider, file)
       if (serverId && serverId !== file.serverId) {
         serverIds.set(file.id, serverId)
       }
@@ -878,7 +910,7 @@ const prepareFiles = async (sessionId: string, request: Request, signal: AbortSi
   for (const file of pending.values()) {
     signal.throwIfAborted()
     try {
-      const serverId = await Promise.race([ensureServerId(apiKey, file), aborted])
+      const serverId = await Promise.race([ensureServerId(provider, file), aborted])
       if (serverId) {
         serverIds.set(file.id, serverId)
         saveServerIds(sessionId, new Map([[file.id, serverId]]))
@@ -999,12 +1031,23 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
   streamFlushes.set(sessionId, flush)
 
   try {
+    const provider = getActiveProvider()
+    if (!isProviderUsable(provider)) {
+      reply = settleReply(reply, 'error', Date.now(), {
+        kind: 'http',
+        message: '',
+        localMessage: { key: 'replyNoProvider' },
+      })
+      return
+    }
+    const features = getProviderFeatures(provider)
+    const adapter = getAdapter(provider.protocol)
     for (let attempt = 0; ; attempt += 1) {
       /** 附件补齐前出错属于上传失败，请求还没有发出 */
       let preparing = true
       let receivedContent = false
       try {
-        const prepared = await prepareFiles(sessionId, request, controller.signal)
+        const prepared = await prepareFiles(sessionId, request, controller.signal, provider)
         preparing = false
         // 附件就绪后获取本轮信息；续写沿用原回答快照，重新生成的快照独立保存。
         const latestReminder = prepared.prefix
@@ -1013,26 +1056,57 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
         reply = { ...reply, latestReminder }
         updateReply(sessionId, reply)
         persist(sessionId)
+        // 供应商没有服务端工具时，由「工具服务」在客户端完成搜索、抓取与 OCR
+        const serverTools = getProviderExtensions(provider).deepseek
+        const toolsEndpoint = serverTools ? null : getToolsEndpoint()
+        const documents =
+          features.files === 'api' || !toolsEndpoint
+            ? []
+            : prepared.question.files.filter((file) => !file.isImage)
+        const clientRun =
+          toolsEndpoint &&
+          (initial.search ||
+            documents.length > 0 ||
+            extractUrls(prepared.question.content).length > 0)
+            ? await runClientTools({
+                endpoint: toolsEndpoint,
+                question: prepared.question,
+                search: initial.search ?? false,
+                documents,
+                signal: controller.signal,
+              })
+            : null
         const messages = toRequestMessages(
           prepared.history,
           prepared.question,
           prepared.prefix,
           initial.thinking ?? false,
-          latestReminder
+          latestReminder,
+          clientRun?.context
         )
-        const events = streamMessage(
-          useSettings.getState().apiKey ?? '',
-          {
-            model: initial.model ?? MODEL,
-            system: SYSTEM_PROMPT,
-            messages,
-            thinking: { type: initial.thinking ? 'enabled' : 'disabled' },
-            safety_check: SAFETY_CHECK,
-            tools: serverTools(initial.search ?? false),
-            ...(titleRequests.has(controller) ? { title: { enabled: true } } : {}),
-          },
-          controller.signal
-        )
+        const chat: ChatRequest = {
+          model: initial.model ?? provider.model,
+          system: SYSTEM_PROMPT,
+          messages,
+          thinking: initial.thinking ?? false,
+          thinkingLevel: useSettings.getState().thinkingLevel,
+          // 服务端搜索只在供应商支持时下发；客户端搜索已在上方完成
+          search: (initial.search ?? false) && features.search,
+          title: features.title && titleRequests.has(controller),
+        }
+        const events = (async function* () {
+          if (clientRun) {
+            yield* clientRun.events
+          }
+          yield* adapter.stream({
+            provider,
+            features,
+            deepseek: serverTools,
+            request: chat,
+            loadAttachment,
+            signal: controller.signal,
+          })
+        })()
         const blockIndexes = new Map<number, number>()
         for await (const event of events) {
           receivedContent ||= event.type === 'content_block_start'
@@ -1056,6 +1130,14 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
           }
         }
         reply = settleReply(reply, 'done', Date.now())
+        // 服务端没有给出标题（或供应商不支持）时，用首条提问的摘要补标题。
+        if (titleRequests.has(controller) && !controller.signal.aborted) {
+          const title = titleFromQuestion(prepared.question.content)
+          if (title && !get().importingHistory) {
+            updateSession(sessionId, (session) => (session.title ? session : { ...session, title }))
+          }
+          titleRequests.delete(controller)
+        }
         break
       } catch (error) {
         if (controller.signal.aborted) {
@@ -1114,5 +1196,114 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
       ),
     }))
     persist(sessionId)
+  }
+}
+
+/** 等尚未落盘的会话写完，避免同步写入被正在进行的保存覆盖 */
+const waitForSaves = () =>
+  new Promise<void>((resolve) => {
+    if (unsavedSessions.size === 0) {
+      resolve()
+      return
+    }
+    const started = Date.now()
+    const timer = setInterval(() => {
+      if (unsavedSessions.size === 0 || Date.now() - started > 5000) {
+        clearInterval(timer)
+        resolve()
+      }
+    }, 50)
+  })
+
+/** 同步读取全部会话：已加载的用内存里的最新版本，未加载的逐条从本地库读取 */
+export const collectSessions = async (): Promise<Session[]> => {
+  const { sessions, sessionCache } = get()
+  const result: Session[] = []
+  for (const summary of sessions) {
+    const session = Object.hasOwn(sessionCache, summary.id)
+      ? sessionCache[summary.id]
+      : await db.loadSession(summary.id)
+    if (session) {
+      result.push({ ...session, ...summary })
+    }
+  }
+  return result
+}
+
+/**
+ * 应用同步合并结果：写入远程较新的会话与原件，删除其他设备已删除的会话。
+ * 期间复用导入锁停止生成并阻止编辑；只改动受影响的会话，当前打开的会话与草稿尽量保留。
+ */
+export const applySyncedSessions = async (
+  incoming: Session[],
+  removed: string[],
+  files: db.StoredFile[]
+): Promise<void> => {
+  if (get().importingHistory) {
+    throw new SyncError('busy')
+  }
+  set({ importingHistory: true })
+  try {
+    for (const controller of Object.values(get().streaming)) {
+      controller.abort()
+    }
+    await Promise.all(deletionTasks)
+    await waitForIdle()
+    await waitForSaves()
+    historyEpoch += 1
+    sessionLoads.clear()
+    for (const id of removed) {
+      await db.deleteSession(id)
+      clearDraft(id)
+    }
+    if (files.length > 0) {
+      await db.saveFiles(files)
+    }
+    for (const session of incoming) {
+      await db.saveSession(session)
+    }
+    const removeIds = new Set(removed)
+    const incomingById = new Map(incoming.map((session) => [session.id, session]))
+    const state = get()
+    const summaries = state.sessions.filter((summary) => !removeIds.has(summary.id))
+    for (const [index, summary] of summaries.entries()) {
+      const session = incomingById.get(summary.id)
+      if (session) {
+        summaries[index] = toSessionSummary(session)
+      }
+    }
+    const known = new Set(summaries.map((summary) => summary.id))
+    for (const session of incoming) {
+      if (!known.has(session.id)) {
+        summaries.push(toSessionSummary(session))
+      }
+    }
+    const cache: Record<string, Session> = {}
+    for (const [id, session] of Object.entries(state.sessionCache)) {
+      if (removeIds.has(id)) {
+        continue
+      }
+      cache[id] = incomingById.get(id) ?? session
+    }
+    for (const id of removeIds) {
+      sessionAccess.delete(id)
+      unsavedSessions.delete(id)
+      pendingFiles.delete(id)
+    }
+    set({
+      sessions: sortSessions(summaries),
+      sessionCache: cache,
+      sessionLoadErrors: {},
+      sessionSaveErrors: {},
+      activeId: state.activeId !== null && removeIds.has(state.activeId) ? null : state.activeId,
+    })
+    trimSessionCache()
+  } finally {
+    set({ importingHistory: false })
+    retrySaveSessions()
+    const { activeId } = get()
+    if (activeId !== null && !getSession(activeId)) {
+      void ensureSessionLoaded(activeId)
+    }
   }
 }

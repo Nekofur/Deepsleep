@@ -14,13 +14,14 @@ import { closeSearchPanel } from '../components/search/searchPanelState.js'
 import { SessionView } from '../components/session/SessionView.js'
 import { MobileHeader } from '../components/session/MobileHeader.js'
 import { Welcome } from '../components/session/Welcome.js'
-import { ensureApiKey } from '../components/settings/settingsDialogState.js'
+import { ensureProvider } from '../components/settings/settingsDialogState.js'
 import { SettingsDialog } from '../components/settings/SettingsDialog.js'
 import { Toast } from '../components/base/Toast.js'
 import { showToast } from '../components/base/toastState.js'
 import { onUploadNotice } from '../services/attachments.js'
 import { Button } from '../components/base/Button.js'
 import { stopReadAloud } from '../services/speech/readAloud.js'
+import { scheduleSync, startAutoSync } from '../services/sync/engine.js'
 import { CollapsedSider } from '../components/sider/CollapsedSider.js'
 import { closeMobileSider } from '../components/sider/mobileSiderState.js'
 import { MobileSider, Sider } from '../components/sider/Sider.js'
@@ -69,9 +70,21 @@ export const App = () => {
 
   useEffect(() => {
     void initChat()
-    // 首次打开先在设置里输入 API Key
-    ensureApiKey()
+    // 首次打开先配置模型服务
+    ensureProvider()
   }, [])
+
+  // 打开自动同步时定时同步；本机删除会话后尽快推送删除记录
+  useEffect(startAutoSync, [])
+  useEffect(
+    () =>
+      useChatStore.subscribe((state, previous) => {
+        if (state.sessions.length < previous.sessions.length) {
+          scheduleSync()
+        }
+      }),
+    []
+  )
 
   return (
     <>

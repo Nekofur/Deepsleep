@@ -35,6 +35,15 @@ const THINKING_BUDGET: Record<ThinkingLevel, number> = {
   xhigh: 16384,
   max: 32768,
 }
+/** DeepSeek 的 Anthropic 格式用 output_config.effort 控制思考强度 */
+const DEEPSEEK_EFFORT: Record<ThinkingLevel, string> = {
+  minimal: 'low',
+  low: 'low',
+  medium: 'high',
+  high: 'high',
+  xhigh: 'high',
+  max: 'max',
+}
 
 const baseUrl = (base: string) => trimBaseUrl(base)
 
@@ -148,6 +157,9 @@ const requestBody = (
   }
   if (deepseek) {
     body.thinking = { type: request.thinking ? 'enabled' : 'disabled' }
+    if (request.thinking) {
+      body.output_config = { effort: DEEPSEEK_EFFORT[request.thinkingLevel] }
+    }
     body.tools = tools(request.search)
     body.safety_check = { level: 'high' }
     if (request.title) {

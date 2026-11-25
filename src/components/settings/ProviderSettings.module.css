@@ -30,11 +30,6 @@
   padding: 10px 12px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 12px;
-  transition: border-color var(--ds-transition-duration) var(--ds-ease-in-out);
-}
-
-.itemActive {
-  border-color: var(--dsw-alias-brand-primary);
 }
 
 .itemRow {
@@ -43,35 +38,9 @@
   gap: 8px;
 }
 
-.itemButton {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-  padding: 0;
-  border: none;
-  background: none;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.dot {
-  flex-shrink: 0;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background-color: var(--dsw-alias-border-l2);
-}
-
-.dotActive {
-  background-color: var(--dsw-alias-brand-primary);
-}
-
 .itemText {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 2px;
   min-width: 0;

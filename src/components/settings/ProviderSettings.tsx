@@ -8,7 +8,6 @@ import { PROVIDER_PRESETS, findPreset } from '../../services/providers/presets.j
 import {
   addProvider,
   removeProvider,
-  setActiveProvider,
   updateProvider,
   useProviders,
 } from '../../services/providers/store.js'
@@ -44,13 +43,12 @@ const failureText = (error: unknown, t: Translator) => {
 }
 
 /**
- * 模型服务：列出全部供应商并切换当前使用的一个。
- * 编辑直接写入设置（自动保存），只有删除需要二次确认。
+ * 模型服务：列出全部供应商，编辑直接写入设置（自动保存），只有删除需要二次确认。
+ * 当前使用哪一家、哪个模型由输入框的模型菜单决定，这里不做切换。
  */
 export const ProviderSettings = () => {
   const t = useTranslate()
   const providers = useProviders((state) => state.providers)
-  const activeId = useProviders((state) => state.activeId)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
   const [presetId, setPresetId] = useState(PROVIDER_PRESETS[0].id)
@@ -61,29 +59,14 @@ export const ProviderSettings = () => {
       {providers.length === 0 ? <div className={styles.empty}>{t('providerEmpty')}</div> : null}
       <div className={styles.list}>
         {providers.map((provider) => (
-          <div
-            key={provider.id}
-            className={clsx(styles.item, provider.id === activeId && styles.itemActive)}
-          >
+          <div key={provider.id} className={styles.item}>
             <div className={styles.itemRow}>
-              <button
-                type="button"
-                className={styles.itemButton}
-                aria-pressed={provider.id === activeId}
-                title={t('providerUse')}
-                onClick={() => setActiveProvider(provider.id)}
-              >
-                <span
-                  className={clsx(styles.dot, provider.id === activeId && styles.dotActive)}
-                  aria-hidden
-                />
-                <span className={styles.itemText}>
-                  <span className={styles.itemName}>{provider.name}</span>
-                  <span className={styles.itemMeta}>
-                    {PROTOCOL_LABELS[provider.protocol]} · {provider.baseUrl || '—'}
-                  </span>
+              <div className={styles.itemText}>
+                <span className={styles.itemName}>{provider.name}</span>
+                <span className={styles.itemMeta}>
+                  {PROTOCOL_LABELS[provider.protocol]} · {provider.baseUrl || '—'}
                 </span>
-              </button>
+              </div>
               <div className={styles.actions}>
                 <IconButton
                   icon={<IconEditOutline16 />}

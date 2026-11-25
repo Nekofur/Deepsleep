@@ -198,7 +198,6 @@ export const ModelMenu = () => {
                     </button>
                     <input
                       className={styles.search}
-                      autoFocus
                       value={query}
                       placeholder={t('modelSearchPlaceholder')}
                       spellCheck={false}

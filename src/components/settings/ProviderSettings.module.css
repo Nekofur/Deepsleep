@@ -98,16 +98,6 @@
   gap: 2px;
 }
 
-.modelSelect {
-  min-width: 0;
-  max-width: 180px;
-  height: 30px;
-  padding: 0 30px 0 10px;
-  border-radius: 15px;
-  font-size: 13px;
-  line-height: 18px;
-}
-
 .confirmRow {
   display: flex;
   flex-shrink: 0;

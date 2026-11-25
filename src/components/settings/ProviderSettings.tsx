@@ -9,7 +9,6 @@ import {
   addProvider,
   removeProvider,
   setActiveProvider,
-  setProviderModel,
   updateProvider,
   useProviders,
 } from '../../services/providers/store.js'
@@ -42,15 +41,6 @@ const failureText = (error: unknown, t: Translator) => {
         ? error.message
         : String(error)
   return message
-}
-
-/** 供应商列表的模型选项：保留当前值，即使它已不在列表里 */
-const modelOptions = (provider: ProviderConfig) => {
-  const models =
-    provider.model && !provider.models.includes(provider.model)
-      ? [provider.model, ...provider.models]
-      : provider.models
-  return models.map((model) => ({ value: model, label: model || '—' }))
 }
 
 /**
@@ -95,15 +85,6 @@ export const ProviderSettings = () => {
                 </span>
               </button>
               <div className={styles.actions}>
-                <Select
-                  className={styles.modelSelect}
-                  ariaLabel={t('providerModel')}
-                  value={provider.model}
-                  placeholder={t('providerNoModel')}
-                  options={modelOptions(provider)}
-                  onChange={(model) => setProviderModel(provider.id, model)}
-                  disabled={provider.models.length === 0 && !provider.model}
-                />
                 <IconButton
                   icon={<IconEditOutline16 />}
                   tooltip={t('providerEdit')}

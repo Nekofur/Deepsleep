@@ -238,13 +238,19 @@
 
 @media not all and (min-width: 768px) {
   .trigger {
-    max-width: 42vw;
+    max-width: 34vw;
     padding: 0 6px;
   }
 
-  /* 手机上优先显示模型名，思考等级在菜单里看 */
-  .triggerLevel {
+  /* 窄屏优先显示思考强度，模型名在菜单里看 */
+  .triggerLabel {
     display: none;
+  }
+
+  .triggerLevel {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .panel {

@@ -53,7 +53,7 @@ pnpm build
 | OpenAI Responses        | `{base}/responses`                            | OpenAI GPT-5 / o 系列、DeepSeek                                                     |
 | Google Gemini           | `{base}/models/{model}:streamGenerateContent` | Google AI Studio                                                                    |
 
-- **思考**：DeepSeek 的思考模式默认开启，由模型自行决定是否思考；关闭开关时下发 `thinking: { type: "disabled" }`（Responses 用 `reasoning.effort: "none"` ），模型直接回答。四种协议都会解析思考增量（`reasoning_content`、`reasoning`、`response.reasoning_*`、`parts[].thought`）。设置 → 通用设置 → 思考等级 提供极简、低、中、高、极高、最大六档，适配器换算成 `reasoning_effort`（OpenAI）、`thinking.budget_tokens`（Anthropic 兼容）或 `thinkingConfig.thinkingBudget`（Gemini）。DeepSeek 只有开/关。
+- **思考**：四种协议都会解析思考增量（`reasoning_content`、`reasoning`、`response.reasoning_*`、`parts[].thought`）。设置 → 通用设置 → 思考等级 提供极简、低、中、高、极高、最大六档，适配器换算成 `reasoning_effort`（OpenAI）、`thinking.budget_tokens`（Anthropic 兼容）或 `thinkingConfig.thinkingBudget`（Gemini）。DeepSeek 只有开/关。
 - **搜索**：DeepSeek 供应商在三种协议下都使用服务端的 `deepseek_web_search` / `deepseek_read_url`。其他对话供应商借助工具服务调用官方 Search / Fetch 接口取回资料，再随提问一起发送；不会把搜索改写成 Gemini 的 `googleSearch`。
 - **附件**：供应商提供 Files API（Anthropic 协议）时先上传再按文件 ID 引用；其余协议把 8MB 以内的图片与 PDF 内联。非图片文档在配置了工具服务时用 OCR 转成文字，否则只保留元数据、不发送。
 - **标题**：DeepSeek 由服务端生成；其他供应商用首条提问的摘要作为标题。

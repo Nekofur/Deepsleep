@@ -118,10 +118,7 @@ async function* stream(options: StreamOptions): AsyncGenerator<MessageStreamEven
   }
   if (deepseek) {
     // DeepSeek 的 Chat Completions 与 Messages 一致：思考、服务端工具、安全校验和标题都在服务端完成
-    // 开启时不强制 thinking，走默认的思考模式让模型自行决定；关闭时才显式禁用
-    if (!chat.thinking) {
-      body.thinking = { type: 'disabled' }
-    }
+    body.thinking = { type: chat.thinking ? 'enabled' : 'disabled' }
     body.tools = [
       { type: 'deepseek_read_url', name: 'deepseek_read_url' },
       ...(chat.search ? [{ type: 'deepseek_web_search', name: 'deepseek_web_search' }] : []),

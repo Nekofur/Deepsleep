@@ -103,10 +103,7 @@ async function* stream(options: StreamOptions): AsyncGenerator<MessageStreamEven
   }
   if (deepseek) {
     // DeepSeek 的 Responses 接口同样在服务端完成搜索、阅读链接与安全校验
-    // 开启时交给默认推理，关闭时用 none 直接回答
-    if (!chat.thinking) {
-      body.reasoning = { effort: 'none' }
-    }
+    body.reasoning = { effort: chat.thinking ? 'high' : 'low' }
     body.tools = [
       { type: 'deepseek_read_url' },
       ...(chat.search ? [{ type: 'deepseek_web_search' }] : []),

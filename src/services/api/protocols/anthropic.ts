@@ -147,10 +147,7 @@ const requestBody = (
     stream: true,
   }
   if (deepseek) {
-    // 开启时不强制 thinking，让模型按默认思考模式自行决定；关闭时才显式禁用
-    if (!request.thinking) {
-      body.thinking = { type: 'disabled' }
-    }
+    body.thinking = { type: request.thinking ? 'enabled' : 'disabled' }
     body.tools = tools(request.search)
     body.safety_check = { level: 'high' }
     if (request.title) {

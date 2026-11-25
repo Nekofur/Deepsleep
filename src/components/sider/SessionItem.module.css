@@ -39,6 +39,24 @@
   line-height: 18px;
 }
 
+/* 远端还有、本地只有摘要的会话：列表里标记成未下载 */
+.remote {
+  flex-shrink: 0;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 8px;
+  background-color: var(--dsw-specific-sidebar-nav-item-hover);
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+  white-space: nowrap;
+
+  @media not all and (min-width: 768px) {
+    font-size: 12px;
+    line-height: 20px;
+  }
+}
+
 .action {
   display: none;
   flex-shrink: 0;

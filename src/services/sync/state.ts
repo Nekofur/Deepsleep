@@ -7,6 +7,9 @@ import { SyncError } from './errors.js'
  * - state.json.gz：gzip 压缩的会话、删除记录与远端已有附件清单；
  * - files/{附件 id}：图片原件逐个对象保存。
  * 合并只需要下载状态文件（很小），新增图片才逐个上传，避免每次同步重传整包。
+ *
+ * v3 起改用 manifest.json.gz + sessions/<id>.json.gz（见 manifest.ts），
+ * 这个模块只为兼容旧构建保留，同步引擎不再引用。
  */
 export const SYNC_FORMAT = 'chat-demo-sync'
 export const SYNC_VERSION = 2

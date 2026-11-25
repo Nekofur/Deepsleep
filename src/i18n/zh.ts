@@ -6,6 +6,9 @@ export const zh = {
   newChat: '开启新对话',
   untitledChat: '新对话',
   sessionLoading: '正在加载对话...',
+  sessionDownloading: '正在下载对话...',
+  sessionRemoteBadge: '未下载',
+  sessionRemoteHint: '这个对话还在远端，打开时才会下载正文与图片',
   sessionListLoadFailed: '对话列表加载失败，请重试',
   sessionLoadFailed: '对话加载失败，请重试',
   sessionSaveFailed: '对话或附件尚未保存到本机，关闭页面可能丢失，请重试',
@@ -234,7 +237,7 @@ export const zh = {
   toolsClientSearchHint:
     '对话供应商不支持服务端联网时，本机会用这里的搜索与抓取接口取回资料，再随提问一起发给模型；附件无法上传时用 OCR 转成文字。',
   syncSectionHint:
-    '把本机会话同步到自己的存储：自建服务器填地址，本机先校验工具服务的 API Key，通过后只把 SHA-256 作为身份发给服务器，服务器按哈希隔离用户并限制用户数；也可以直接填写 S3 兼容对象存储的连接信息。按会话合并，两台设备都可以新增、修改和删除；Key 与设置不同步。',
+    '把本机会话同步到自己的存储：自建服务器填地址，本机先校验工具服务的 API Key，通过后只把 SHA-256 作为身份发给服务器，服务器按哈希隔离用户并限制用户数；也可以直接填写 S3 兼容对象存储的连接信息。按会话合并，两台设备都可以新增、修改和删除；默认只同步会话列表，打开某个会话时才下载正文与图片；Key 与设置不同步。',
   syncTransport: '同步方式',
   syncTransportServer: '自建服务器',
   syncTransportS3: 'S3 对象存储',

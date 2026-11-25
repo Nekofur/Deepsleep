@@ -2,7 +2,7 @@ import { SyncError } from './errors.js'
 
 /**
  * 自建同步服务器的客户端：前端校验工具服务 Key 后，只发送它的 SHA-256，
- * 服务端按这个哈希隔离用户目录，保存 state.json.gz 与 files/{附件 id}。
+ * 服务端按这个哈希隔离用户目录，保存 manifest.json.gz、sessions/<id>.json.gz 与 files/{附件 id}。
  */
 export type ServerConfig = { serverUrl: string; token: string }
 
@@ -52,12 +52,12 @@ const send = async (input: string, init: RequestInit): Promise<Response> => {
   }
 }
 
-/** 读取状态文件；服务器上还没有时返回 null */
-export const readState = async (
+/** 读取会话清单；服务器上还没有同步数据时返回 null */
+export const readManifest = async (
   config: ServerConfig,
   signal?: AbortSignal
 ): Promise<{ bytes: Uint8Array<ArrayBuffer>; etag: string } | null> => {
-  const response = await send(url(config, '/api/sync/state'), {
+  const response = await send(url(config, '/api/sync/manifest'), {
     method: 'GET',
     headers: auth(config.token),
     signal,
@@ -74,8 +74,8 @@ export const readState = async (
   }
 }
 
-/** 条件写入状态文件：etag 为空时要求服务器上还没有状态 */
-export const writeState = async (
+/** 条件写入会话清单：etag 为空时要求服务器上还没有清单 */
+export const writeManifest = async (
   config: ServerConfig,
   bytes: Uint8Array<ArrayBuffer>,
   etag: string | null,
@@ -90,7 +90,7 @@ export const writeState = async (
   } else {
     headers['If-None-Match'] = '*'
   }
-  const response = await send(url(config, '/api/sync/state'), {
+  const response = await send(url(config, '/api/sync/manifest'), {
     method: 'PUT',
     headers,
     body: bytes,
@@ -100,6 +100,47 @@ export const writeState = async (
     throw await failure(response)
   }
   return { etag: response.headers.get('ETag') ?? '' }
+}
+
+/** 读取单个会话正文；不存在时返回 null */
+export const readSession = async (
+  config: ServerConfig,
+  id: string,
+  signal?: AbortSignal
+): Promise<Uint8Array<ArrayBuffer> | null> => {
+  const response = await send(url(config, `/api/sync/sessions/${encodeURIComponent(id)}`), {
+    method: 'GET',
+    headers: auth(config.token),
+    signal,
+  })
+  if (response.status === 404) {
+    return null
+  }
+  if (!response.ok) {
+    throw await failure(response)
+  }
+  return new Uint8Array(await response.arrayBuffer())
+}
+
+/** 上传单个会话正文；同一 id 重复写入是幂等的 */
+export const writeSession = async (
+  config: ServerConfig,
+  id: string,
+  bytes: Uint8Array<ArrayBuffer>,
+  signal?: AbortSignal
+): Promise<void> => {
+  const response = await send(url(config, `/api/sync/sessions/${encodeURIComponent(id)}`), {
+    method: 'PUT',
+    headers: {
+      ...auth(config.token),
+      'Content-Type': 'application/gzip',
+    },
+    body: bytes,
+    signal,
+  })
+  if (!response.ok) {
+    throw await failure(response)
+  }
 }
 
 /** 读取附件原件；不存在时返回 null */
@@ -143,9 +184,9 @@ export const writeFile = async (
   }
 }
 
-/** 验证地址与密码：GET 状态文件，404 表示服务器可达且密码正确 */
+/** 验证地址与密码：GET 会话清单，404 表示服务器可达且密码正确 */
 export const verifyServer = async (config: ServerConfig, signal?: AbortSignal): Promise<void> => {
-  const response = await send(url(config, '/api/sync/state'), {
+  const response = await send(url(config, '/api/sync/manifest'), {
     method: 'GET',
     headers: auth(config.token),
     signal,

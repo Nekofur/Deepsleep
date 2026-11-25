@@ -7,9 +7,12 @@
  * SHA-256 建立独立目录，用户之间互相看不到数据；原始 Key 不落盘。
  *
  * 每个用户目录：
- *   <data>/users/<sha256(key)>/state.json.gz   会话、删除记录与远端附件清单
- *   <data>/users/<sha256(key)>/files/<id>      图片原件
- *   <data>/users/<sha256(key)>/meta.json       递增版本号，用作 ETag
+ *   <data>/users/<sha256(key)>/manifest.json.gz   会话列表、删除记录与远端附件清单
+ *   <data>/users/<sha256(key)>/manifest.meta.json 清单的递增版本号，用作 ETag
+ *   <data>/users/<sha256(key)>/sessions/<id>.json.gz 每个会话的正文
+ *   <data>/users/<sha256(key)>/files/<id>         图片原件
+ *   <data>/users/<sha256(key)>/state.json.gz      已废弃的 v2 状态文件，仅为兼容旧构建保留
+ *   <data>/users/<sha256(key)>/meta.json          state.json.gz 的递增版本号
  *
  * 环境变量：
  *   PORT=8080                    监听端口
@@ -28,6 +31,8 @@ const DATA_DIR = resolve(process.env.SYNC_DATA_DIR ?? '.sync-data')
 const ADMIN_TOKEN = process.env.SYNC_ADMIN_TOKEN ?? ''
 const USERS_DIR = join(DATA_DIR, 'users')
 const STATE_LIMIT = 16 * 1024 * 1024
+const MANIFEST_LIMIT = 16 * 1024 * 1024
+const SESSION_LIMIT = 32 * 1024 * 1024
 const FILE_LIMIT = 128 * 1024 * 1024
 const MAX_USERS = Number(process.env.SYNC_MAX_USERS ?? 20)
 
@@ -69,19 +74,44 @@ const readBody = async (req, limit) => {
 
 const safeFileId = (id) => /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(id)
 
+/** 路径段解码失败按空串处理，交给各自的 id 校验返回 400 */
+const decodeSegment = (value) => {
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return ''
+  }
+}
+
+/** 会话 id 只允许字母数字与 . _ -；拒绝 . 和 .. 以免跳出会话目录 */
+const safeSessionId = (id) =>
+  typeof id === 'string' &&
+  id.length >= 1 &&
+  id.length <= 128 &&
+  /^[A-Za-z0-9._-]+$/.test(id) &&
+  id !== '.' &&
+  id !== '..'
+
 const userDir = (id) => join(USERS_DIR, id)
 const statePath = (id) => join(userDir(id), 'state.json.gz')
+const manifestPath = (id) => join(userDir(id), 'manifest.json.gz')
 const filesDir = (id) => join(userDir(id), 'files')
+const sessionsDir = (id) => join(userDir(id), 'sessions')
+const sessionPath = (id, sessionId) => join(sessionsDir(id), `${sessionId}.json.gz`)
 const metaPath = (id) => join(userDir(id), 'meta.json')
+const manifestMetaPath = (id) => join(userDir(id), 'manifest.meta.json')
 
-const readMeta = async (id) => {
+const readRevision = async (path) => {
   try {
-    const value = JSON.parse(await readFile(metaPath(id), 'utf8'))
+    const value = JSON.parse(await readFile(path, 'utf8'))
     return typeof value?.revision === 'number' ? value : null
   } catch {
     return null
   }
 }
+
+const readMeta = (id) => readRevision(metaPath(id))
+const readManifestMeta = (id) => readRevision(manifestMetaPath(id))
 
 const parseEtagRevision = (value) => {
   const match = /^"?(\d+)"?$/.exec(String(value ?? '').trim())
@@ -183,44 +213,127 @@ const handleStateGet = async (res, id) => {
   }
 }
 
+/** 条件写入：If-None-Match: * 要求没有旧数据，If-Match 要求版本号一致；否则回 412 / 428 */
+const checkCondition = (req, res, meta) => {
+  const current = meta?.revision ?? 0
+  const ifMatch = req.headers['if-match']
+  const ifNoneMatch = req.headers['if-none-match']
+  if (ifNoneMatch === '*') {
+    if (meta) {
+      json(res, 412, { error: 'sync revision changed, pull again', revision: current })
+      return false
+    }
+  } else if (ifMatch !== undefined) {
+    if (!meta || parseEtagRevision(ifMatch) !== current) {
+      json(res, 412, { error: 'sync revision changed, pull again', revision: current })
+      return false
+    }
+  } else {
+    json(res, 428, { error: 'If-Match or If-None-Match is required' })
+    return false
+  }
+  return true
+}
+
+/** 先写临时文件再改名，避免读到写了一半的对象 */
+const writeFileAtomic = async (path, body) => {
+  const temp = `${path}.${process.pid}.${Date.now()}.tmp`
+  try {
+    await writeFile(temp, body)
+    await rename(temp, path)
+  } catch (error) {
+    await unlink(temp).catch(() => {})
+    throw error
+  }
+}
+
 const handleStatePut = async (req, res, id) =>
   withUserLock(id, async () => {
     const meta = await readMeta(id)
-    const current = meta?.revision ?? 0
-    const ifMatch = req.headers['if-match']
-    const ifNoneMatch = req.headers['if-none-match']
-    if (ifNoneMatch === '*') {
-      if (meta) {
-        json(res, 412, { error: 'sync revision changed, pull again', revision: current })
-        return
-      }
-    } else if (ifMatch !== undefined) {
-      if (!meta || parseEtagRevision(ifMatch) !== current) {
-        json(res, 412, { error: 'sync revision changed, pull again', revision: current })
-        return
-      }
-    } else {
-      json(res, 428, { error: 'If-Match or If-None-Match is required' })
+    if (!checkCondition(req, res, meta)) {
       return
     }
-
     const body = await readBody(req, STATE_LIMIT)
-    const temp = join(userDir(id), `state.${process.pid}.${Date.now()}.tmp`)
-    try {
-      await writeFile(temp, body)
-      await rename(temp, statePath(id))
-    } catch (error) {
-      await unlink(temp).catch(() => {})
-      throw error
-    }
+    await writeFileAtomic(statePath(id), body)
     const next = {
-      revision: current + 1,
+      revision: (meta?.revision ?? 0) + 1,
       updatedAt: new Date().toISOString(),
       size: body.length,
     }
     await writeFile(metaPath(id), JSON.stringify(next))
     json(res, 200, next, { ETag: `"${next.revision}"` })
   })
+
+const handleManifestGet = async (res, id) => {
+  const meta = await readManifestMeta(id)
+  if (!meta) {
+    json(res, 404, { error: 'no sync data yet' })
+    return
+  }
+  try {
+    const info = await stat(manifestPath(id))
+    res.writeHead(200, {
+      'Content-Type': 'application/gzip',
+      'Content-Length': info.size,
+      ETag: `"${meta.revision}"`,
+      'Cache-Control': 'no-store',
+      ...cors,
+    })
+    createReadStream(manifestPath(id)).pipe(res)
+  } catch {
+    json(res, 404, { error: 'no sync data yet' })
+  }
+}
+
+/** 清单写入：独立的版本号，会话正文写入不会让清单的 ETag 失效 */
+const handleManifestPut = async (req, res, id) =>
+  withUserLock(id, async () => {
+    const meta = await readManifestMeta(id)
+    if (!checkCondition(req, res, meta)) {
+      return
+    }
+    const body = await readBody(req, MANIFEST_LIMIT)
+    await writeFileAtomic(manifestPath(id), body)
+    const next = {
+      revision: (meta?.revision ?? 0) + 1,
+      updatedAt: new Date().toISOString(),
+      size: body.length,
+    }
+    await writeFile(manifestMetaPath(id), JSON.stringify(next))
+    json(res, 200, next, { ETag: `"${next.revision}"` })
+  })
+
+const handleSessionGet = async (res, id, sessionId) => {
+  if (!safeSessionId(sessionId)) {
+    json(res, 400, { error: 'invalid session id' })
+    return
+  }
+  try {
+    const info = await stat(sessionPath(id, sessionId))
+    res.writeHead(200, {
+      'Content-Type': 'application/gzip',
+      'Content-Length': info.size,
+      'Cache-Control': 'no-store',
+      ...cors,
+    })
+    createReadStream(sessionPath(id, sessionId)).pipe(res)
+  } catch {
+    json(res, 404, { error: 'session not found' })
+  }
+}
+
+const handleSessionPut = async (req, res, id, sessionId) => {
+  if (!safeSessionId(sessionId)) {
+    json(res, 400, { error: 'invalid session id' })
+    return
+  }
+  await withUserLock(id, async () => {
+    const body = await readBody(req, SESSION_LIMIT)
+    await mkdir(sessionsDir(id), { recursive: true })
+    await writeFileAtomic(sessionPath(id, sessionId), body)
+    json(res, 200, { ok: true, size: body.length })
+  })
+}
 
 const handleFileGet = async (res, id, fileId) => {
   if (!safeFileId(fileId)) {
@@ -269,7 +382,7 @@ const server = createServer(async (req, res) => {
       return
     }
     if (url.pathname === '/api/health') {
-      json(res, 200, { ok: true, name: 'deepsleep-sync', version: 4, maxUsers: MAX_USERS })
+      json(res, 200, { ok: true, name: 'deepsleep-sync', version: 5, maxUsers: MAX_USERS })
       return
     }
 
@@ -329,13 +442,31 @@ const server = createServer(async (req, res) => {
       await handleStatePut(req, res, id)
       return
     }
+    if (url.pathname === '/api/sync/manifest' && req.method === 'GET') {
+      await handleManifestGet(res, id)
+      return
+    }
+    if (url.pathname === '/api/sync/manifest' && req.method === 'PUT') {
+      await handleManifestPut(req, res, id)
+      return
+    }
+    const sessionMatch = /^\/api\/sync\/sessions\/([^/]+)$/.exec(url.pathname)
+    if (sessionMatch && (req.method === 'GET' || req.method === 'PUT')) {
+      const sessionId = decodeSegment(sessionMatch[1])
+      if (req.method === 'GET') {
+        await handleSessionGet(res, id, sessionId)
+      } else {
+        await handleSessionPut(req, res, id, sessionId)
+      }
+      return
+    }
     const fileMatch = /^\/api\/sync\/files\/([^/]+)$/.exec(url.pathname)
     if (fileMatch && req.method === 'GET') {
-      await handleFileGet(res, id, decodeURIComponent(fileMatch[1]))
+      await handleFileGet(res, id, decodeSegment(fileMatch[1]))
       return
     }
     if (fileMatch && req.method === 'PUT') {
-      await handleFilePut(req, res, id, decodeURIComponent(fileMatch[1]))
+      await handleFilePut(req, res, id, decodeSegment(fileMatch[1]))
       return
     }
     json(res, 404, { error: 'not found' })

@@ -45,6 +45,10 @@ export const App = () => {
   const sessionLoadError = useChatStore((state) =>
     state.activeId === null ? false : state.sessionLoadErrors[state.activeId] === true
   )
+  // 远端还有、本地只有摘要的会话正在按需下载
+  const remoteLoading = useChatStore((state) =>
+    state.activeId === null ? false : state.remoteSessions.includes(state.activeId)
+  )
   const frameRef = useMobileViewport(isMobile)
   const streaming = useChatStore((state) =>
     state.activeId === null ? false : Object.hasOwn(state.streaming, state.activeId)
@@ -113,7 +117,9 @@ export const App = () => {
                   <span>
                     {(!ready ? initError : sessionLoadError)
                       ? t(!ready ? 'sessionListLoadFailed' : 'sessionLoadFailed')
-                      : t('sessionLoading')}
+                      : remoteLoading
+                        ? t('sessionDownloading')
+                        : t('sessionLoading')}
                   </span>
                   {(!ready ? initError : sessionLoadError) ? (
                     <Button

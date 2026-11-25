@@ -1,4 +1,5 @@
 import { formatDate } from '../../utils/format.js'
+import { requestSync } from '../sync/signals.js'
 import * as db from './db.js'
 import { replaceHistory, useChatStore } from './store.js'
 import type { Session } from './types.js'
@@ -19,6 +20,9 @@ const backupFileName = (date: Date) => `deepseek_data-${formatDate(date)}.zip`
 /** 导出为历史会话导出格式的 ZIP，可再次导入。 */
 export const exportHistory = (): Promise<{ name: string; blob: Blob }> =>
   enqueueBackup(async () => {
+    // 远端还有、本地只有摘要的会话先下载，导出才是全量
+    const { downloadAllSessions } = await import('../sync/engine.js')
+    await downloadAllSessions()
     // 列表和已加载内容保留导出开始时的快照；未打开的会话逐条读取，不填满详情缓存。
     const { sessions, sessionCache } = useChatStore.getState()
     async function* readSessions(): AsyncGenerator<Session> {
@@ -47,7 +51,10 @@ export const importHistory = (file: File): Promise<number> =>
   enqueueBackup(async () => {
     const { checkArchiveFormat, importArchive } = await import('./history/importArchive.js')
     await checkArchiveFormat(file)
-    return replaceHistory(() => importArchive(file))
+    const count = await replaceHistory(() => importArchive(file))
+    // 导入后上传一次全量，让其他设备拿到同一份历史
+    requestSync()
+    return count
   })
 
 /** 确认删除后调用：以空历史原子替换全部本地会话与附件，保留 API Key 和其他设置。 */

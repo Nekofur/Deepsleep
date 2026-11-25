@@ -89,6 +89,8 @@ type ChatState = {
   importingHistory: boolean
   /** 仅列表元数据，按 updatedAt 降序；流式消息更新不会改变此数组。 */
   sessions: SessionSummary[]
+  /** 远端还有、本地只有摘要的会话 id；打开时才下载正文 */
+  remoteSessions: string[]
   sessionCache: Record<string, Session>
   sessionLoadErrors: Record<string, boolean>
   sessionSaveErrors: Record<string, boolean>
@@ -103,6 +105,7 @@ export const useChatStore = create<ChatState>(() => ({
   initError: false,
   importingHistory: false,
   sessions: [],
+  remoteSessions: [],
   sessionCache: {},
   sessionLoadErrors: {},
   sessionSaveErrors: {},
@@ -139,8 +142,29 @@ let accessSequence = 0
 let historyEpoch = 0
 let initTask: Promise<void> | undefined
 const sessionLoads = new Map<string, { promise: Promise<void> }>()
+/** 远端还有、本地只有摘要的会话；打开会话时按需下载正文 */
+const remoteSessionIds = new Set<string>()
 
 const touchSession = (id: string) => sessionAccess.set(id, ++accessSequence)
+
+/** 把未下载集合同步给界面，用于显示「未下载」占位项 */
+const publishRemoteSessions = () => {
+  set({ remoteSessions: [...remoteSessionIds] })
+}
+
+const replaceRemoteSessions = (ids: Iterable<string>) => {
+  remoteSessionIds.clear()
+  for (const id of ids) {
+    remoteSessionIds.add(id)
+  }
+  publishRemoteSessions()
+}
+
+/** 会话正文还在远端、本地只有列表摘要 */
+export const isRemoteSession = (id: string): boolean => remoteSessionIds.has(id)
+
+/** 全部未下载的远端会话 id，导出全量前需要逐个下载 */
+export const getRemoteSessionIds = (): string[] => [...remoteSessionIds]
 
 const trimSessionCache = () => {
   const state = get()
@@ -359,6 +383,11 @@ const ensureSessionLoaded = (id: string): Promise<void> => {
   sessionLoads.set(id, load)
   load.promise = (async () => {
     try {
+      // 远端还有、本地没有正文：先按需下载，再继续原有的本地读取流程
+      if (isRemoteSession(id)) {
+        const { fetchSyncedSession } = await import('../sync/engine.js')
+        await fetchSyncedSession(id)
+      }
       const stored = await db.loadSession(id)
       if (epoch !== historyEpoch || sessionLoads.get(id) !== load) {
         return
@@ -443,11 +472,13 @@ export const replaceHistory = async (write: () => Promise<void>): Promise<number
     sessionAccess.clear()
     unsavedSessions.clear()
     pendingFiles.clear()
+    remoteSessionIds.clear()
     clearAllDrafts()
     set({
       ready: true,
       initError: false,
       sessions: sortSessions(summaries),
+      remoteSessions: [],
       sessionCache: {},
       sessionLoadErrors: {},
       sessionSaveErrors: {},
@@ -537,9 +568,11 @@ const removeSessionData = async (id: string): Promise<boolean> => {
     sessionAccess.delete(id)
     unsavedSessions.delete(id)
     pendingFiles.delete(id)
+    remoteSessionIds.delete(id)
     clearDraft(id)
     set((state) => ({
       sessions: state.sessions.filter((session) => session.id !== id),
+      remoteSessions: [...remoteSessionIds],
       sessionCache: Object.fromEntries(
         Object.entries(state.sessionCache).filter(([key]) => key !== id)
       ),
@@ -1223,6 +1256,10 @@ export const collectSessions = async (): Promise<Session[]> => {
   const { sessions, sessionCache } = get()
   const result: Session[] = []
   for (const summary of sessions) {
+    // 远端未下载的占位项没有正文，不读本地库
+    if (isRemoteSession(summary.id)) {
+      continue
+    }
     const session = Object.hasOwn(sessionCache, summary.id)
       ? sessionCache[summary.id]
       : await db.loadSession(summary.id)
@@ -1233,15 +1270,99 @@ export const collectSessions = async (): Promise<Session[]> => {
   return result
 }
 
+/** 当前列表里的全部摘要，含远端未下载的占位项 */
+export const collectSessionSummaries = (): SessionSummary[] => get().sessions
+
+/** 清单里的最新摘要：本次下载的优先，其次内存里的最新版本 */
+const latestSummary = (
+  summary: SessionSummary,
+  downloaded: Map<string, Session>
+): SessionSummary => {
+  const session = downloaded.get(summary.id) ?? getSession(summary.id)
+  return session ? toSessionSummary(session) : summary
+}
+
 /**
- * 应用同步合并结果：写入远程较新的会话与原件，删除其他设备已删除的会话。
- * 期间复用导入锁停止生成并阻止编辑；只改动受影响的会话，当前打开的会话与草稿尽量保留。
+ * 更新列表与详情缓存：写入本次下载的会话、移除已删除的会话；
+ * 清单里没有但同步期间新建的本地会话继续保留，避免正在进行的对话从列表消失。
  */
-export const applySyncedSessions = async (
-  incoming: Session[],
+const applyManifestState = (
+  manifestSessions: SessionSummary[],
+  removed: Set<string>,
+  downloaded: Map<string, Session>,
+  extra: SessionSummary[]
+) => {
+  const known = new Set(manifestSessions.map((summary) => summary.id))
+  const summaries = manifestSessions
+    .filter((summary) => !removed.has(summary.id))
+    .map((summary) => latestSummary(summary, downloaded))
+  for (const summary of extra) {
+    if (!known.has(summary.id) && !removed.has(summary.id)) {
+      summaries.push(summary)
+    }
+  }
+  for (const id of removed) {
+    sessionAccess.delete(id)
+    unsavedSessions.delete(id)
+    pendingFiles.delete(id)
+  }
+  const withoutRemoved = (source: Record<string, boolean>) =>
+    Object.fromEntries(Object.entries(source).filter(([id]) => !removed.has(id)))
+  set((state) => {
+    const sessionCache: Record<string, Session> = {}
+    for (const [id, session] of Object.entries(state.sessionCache)) {
+      if (removed.has(id)) {
+        continue
+      }
+      sessionCache[id] = downloaded.get(id) ?? session
+    }
+    for (const [id, session] of downloaded) {
+      if (!Object.hasOwn(sessionCache, id)) {
+        sessionCache[id] = session
+      }
+    }
+    return {
+      sessions: sortSessions(summaries),
+      sessionCache,
+      sessionLoadErrors: withoutRemoved(state.sessionLoadErrors),
+      sessionSaveErrors: withoutRemoved(state.sessionSaveErrors),
+      activeId: state.activeId !== null && removed.has(state.activeId) ? null : state.activeId,
+    }
+  })
+  trimSessionCache()
+}
+
+/**
+ * 应用同步清单：更新会话列表（含远端未下载的占位项），写入本次下载的会话与图片原件，
+ * 删除其他设备已删除的会话。只有真正写库时才复用导入锁停止生成；
+ * 只改动受影响的会话，当前打开的会话与草稿尽量保留。
+ */
+export const applySyncedManifest = async (
+  manifestSessions: SessionSummary[],
   removed: string[],
-  files: db.StoredFile[]
+  remoteOnly: readonly string[],
+  downloaded: Session[] = [],
+  files: db.StoredFile[] = []
 ): Promise<void> => {
+  const removeIds = new Set(removed)
+  const downloadedById = new Map(downloaded.map((session) => [session.id, session]))
+  // 清单里没有、但同步期间新建的本地会话：确认有正文后继续保留
+  const known = new Set(manifestSessions.map((summary) => summary.id))
+  const extra: SessionSummary[] = []
+  for (const summary of get().sessions) {
+    if (known.has(summary.id) || removeIds.has(summary.id)) {
+      continue
+    }
+    if (getSession(summary.id) || (await db.loadSession(summary.id).catch(() => undefined))) {
+      extra.push(summary)
+    }
+  }
+  replaceRemoteSessions(remoteOnly)
+  if (removeIds.size === 0 && downloadedById.size === 0 && files.length === 0) {
+    // 只调整列表与未下载标记，不打断正在生成的回答
+    applyManifestState(manifestSessions, removeIds, downloadedById, extra)
+    return
+  }
   if (get().importingHistory) {
     throw new SyncError('busy')
   }
@@ -1255,52 +1376,17 @@ export const applySyncedSessions = async (
     await waitForSaves()
     historyEpoch += 1
     sessionLoads.clear()
-    for (const id of removed) {
+    for (const id of removeIds) {
       await db.deleteSession(id)
       clearDraft(id)
     }
     if (files.length > 0) {
       await db.saveFiles(files)
     }
-    for (const session of incoming) {
+    for (const session of downloaded) {
       await db.saveSession(session)
     }
-    const removeIds = new Set(removed)
-    const incomingById = new Map(incoming.map((session) => [session.id, session]))
-    const state = get()
-    const summaries = state.sessions.filter((summary) => !removeIds.has(summary.id))
-    for (const [index, summary] of summaries.entries()) {
-      const session = incomingById.get(summary.id)
-      if (session) {
-        summaries[index] = toSessionSummary(session)
-      }
-    }
-    const known = new Set(summaries.map((summary) => summary.id))
-    for (const session of incoming) {
-      if (!known.has(session.id)) {
-        summaries.push(toSessionSummary(session))
-      }
-    }
-    const cache: Record<string, Session> = {}
-    for (const [id, session] of Object.entries(state.sessionCache)) {
-      if (removeIds.has(id)) {
-        continue
-      }
-      cache[id] = incomingById.get(id) ?? session
-    }
-    for (const id of removeIds) {
-      sessionAccess.delete(id)
-      unsavedSessions.delete(id)
-      pendingFiles.delete(id)
-    }
-    set({
-      sessions: sortSessions(summaries),
-      sessionCache: cache,
-      sessionLoadErrors: {},
-      sessionSaveErrors: {},
-      activeId: state.activeId !== null && removeIds.has(state.activeId) ? null : state.activeId,
-    })
-    trimSessionCache()
+    applyManifestState(manifestSessions, removeIds, downloadedById, extra)
   } finally {
     set({ importingHistory: false })
     retrySaveSessions()
@@ -1309,4 +1395,26 @@ export const applySyncedSessions = async (
       void ensureSessionLoaded(activeId)
     }
   }
+}
+
+/** 单个远端会话下载完成：清掉未下载标记，刷新列表摘要与已加载的详情 */
+export const noteSessionDownloaded = (session: Session) => {
+  remoteSessionIds.delete(session.id)
+  publishRemoteSessions()
+  const summary = toSessionSummary(session)
+  set((state) => ({
+    sessions: sortSessions(
+      state.sessions.some((item) => item.id === session.id)
+        ? state.sessions.map((item) => (item.id === session.id ? summary : item))
+        : [...state.sessions, summary]
+    ),
+    // 已经打开的会话直接放入详情缓存，避免并发同步打断这次读取后一直停在加载中
+    sessionCache:
+      Object.hasOwn(state.sessionCache, session.id) || state.activeId === session.id
+        ? { ...state.sessionCache, [session.id]: session }
+        : state.sessionCache,
+    sessionLoadErrors: Object.fromEntries(
+      Object.entries(state.sessionLoadErrors).filter(([id]) => id !== session.id)
+    ),
+  }))
 }

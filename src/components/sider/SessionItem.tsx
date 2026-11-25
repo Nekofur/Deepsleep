@@ -2,7 +2,7 @@ import clsx from 'clsx'
 import { memo, useState } from 'react'
 import { useTranslate } from '../../i18n/index.js'
 import { IconEditOutline16, IconEllipsisOutline16, IconTrashOutline16 } from '../base/icons.js'
-import { renameSession, selectSession } from '../../services/chat/store.js'
+import { renameSession, selectSession, useChatStore } from '../../services/chat/store.js'
 import type { SessionSummary } from '../../services/chat/types.js'
 import { IconButton } from '../base/IconButton.js'
 import { Menu } from '../base/Menu.js'
@@ -20,6 +20,8 @@ export const SessionItem = memo(function SessionItem({
 }) {
   const t = useTranslate()
   const [editing, setEditing] = useState(false)
+  // 远端还有、本地只有摘要的会话：打开时才下载正文
+  const remote = useChatStore((state) => state.remoteSessions.includes(session.id))
   const displayTitle = session.title || t('untitledChat')
 
   if (editing) {
@@ -56,6 +58,11 @@ export const SessionItem = memo(function SessionItem({
       }}
     >
       <div className={styles.title}>{displayTitle}</div>
+      {remote ? (
+        <span className={styles.remote} title={t('sessionRemoteHint')}>
+          {t('sessionRemoteBadge')}
+        </span>
+      ) : null}
       <div className={styles.action} onClick={(event) => event.stopPropagation()}>
         <Menu
           options={[

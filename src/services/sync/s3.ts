@@ -6,8 +6,9 @@ import { SyncError } from './errors.js'
  * 因此不需要自建同步服务器。
  *
  * 对象布局（prefix 默认 chat-demo/）：
- * - {prefix}state.json.gz：gzip 状态文件，其 ETag 用作版本条件；
- * - {prefix}files/{附件 id}：图片原件，按需上传。
+ * - {prefix}manifest.json.gz：会话列表、删除记录与图片清单，其 ETag 用作版本条件；
+ * - {prefix}sessions/<会话 id>.json.gz：每个会话的正文，按需上传与下载；
+ * - {prefix}files/<附件 id>：图片原件，按需上传。
  *
  * 需要给存储桶配置 CORS（见 README）：允许 GET / PUT / HEAD，允许 Authorization、
  * x-amz-* 与 If-Match / If-None-Match 请求头，并暴露 ETag 响应头。
@@ -79,6 +80,11 @@ const prefixOf = (config: S3Config) =>
   config.prefix.trim().replace(/^\/+|\/+$/g, '') + (config.prefix.trim() ? '/' : '')
 
 export const stateKeyOf = (config: S3Config) => `${prefixOf(config)}state.json.gz`
+
+export const manifestKeyOf = (config: S3Config) => `${prefixOf(config)}manifest.json.gz`
+
+export const sessionKeyOf = (config: S3Config, id: string) =>
+  `${prefixOf(config)}sessions/${id}.json.gz`
 
 export const fileKeyOf = (config: S3Config, id: string) => `${prefixOf(config)}files/${id}`
 
@@ -221,7 +227,10 @@ export const readS3State = async (
 ): Promise<{ bytes: Uint8Array<ArrayBuffer>; etag: string } | null> =>
   getObject(config, stateKeyOf(config), signal)
 
-/** 条件写入状态文件：带 ETag 时用 If-Match，首次写入用 If-None-Match: * */
+/**
+ * 条件写入状态文件。v3 起客户端只写 manifest，保留这个接口只是为了兼容旧构建
+ * 与已经写入过的 state.json.gz。
+ */
 export const writeS3State = async (
   config: S3Config,
   bytes: Uint8Array<ArrayBuffer>,
@@ -236,6 +245,49 @@ export const writeS3State = async (
     etag ? { 'If-Match': etag } : { 'If-None-Match': '*' },
     signal
   )
+
+/** 读取会话清单；远端还没有同步数据时返回 null */
+export const readS3Manifest = async (
+  config: S3Config,
+  signal?: AbortSignal
+): Promise<{ bytes: Uint8Array<ArrayBuffer>; etag: string } | null> =>
+  getObject(config, manifestKeyOf(config), signal)
+
+/** 条件写入会话清单：带 ETag 时用 If-Match，首次写入用 If-None-Match: * */
+export const writeS3Manifest = async (
+  config: S3Config,
+  bytes: Uint8Array<ArrayBuffer>,
+  etag: string | null,
+  signal?: AbortSignal
+): Promise<{ etag: string }> =>
+  putObject(
+    config,
+    manifestKeyOf(config),
+    bytes,
+    'application/gzip',
+    etag ? { 'If-Match': etag } : { 'If-None-Match': '*' },
+    signal
+  )
+
+/** 读取单个会话正文；不存在时返回 null */
+export const readS3Session = async (
+  config: S3Config,
+  id: string,
+  signal?: AbortSignal
+): Promise<Uint8Array<ArrayBuffer> | null> => {
+  const object = await getObject(config, sessionKeyOf(config, id), signal)
+  return object?.bytes ?? null
+}
+
+/** 上传单个会话正文；同一 id 重复写入是幂等的，顺序由 updatedAt 合并保证 */
+export const writeS3Session = async (
+  config: S3Config,
+  id: string,
+  bytes: Uint8Array<ArrayBuffer>,
+  signal?: AbortSignal
+): Promise<void> => {
+  await putObject(config, sessionKeyOf(config, id), bytes, 'application/gzip', {}, signal)
+}
 
 /** 读取附件原件；不存在时返回 null */
 export const readS3File = async (
@@ -265,7 +317,7 @@ export const writeS3File = async (
   )
 }
 
-/** 验证配置：读取状态文件可区分鉴权失败（403）与尚未同步（404，视为通过） */
+/** 验证配置：读取会话清单可区分鉴权失败（403）与尚未同步（404，视为通过） */
 export const verifyS3 = async (config: S3Config, signal?: AbortSignal): Promise<void> => {
-  await getObject(config, stateKeyOf(config), signal)
+  await getObject(config, manifestKeyOf(config), signal)
 }

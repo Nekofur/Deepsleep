@@ -8,6 +8,10 @@ export const en = {
   newChat: 'New chat',
   untitledChat: 'New chat',
   sessionLoading: 'Loading chats...',
+  sessionDownloading: 'Downloading chat...',
+  sessionRemoteBadge: 'Not downloaded',
+  sessionRemoteHint:
+    'This chat is still on the remote; its messages and images load when you open it.',
   sessionListLoadFailed: 'Unable to load the chat list. Please try again.',
   sessionLoadFailed: 'Unable to load this chat. Please try again.',
   sessionSaveFailed:
@@ -245,7 +249,7 @@ export const en = {
   toolsClientSearchHint:
     'When the chat provider has no server-side web access, the app calls these search and fetch APIs locally and sends the results with your question. Documents that cannot be uploaded are read with OCR.',
   syncSectionHint:
-    'Sync conversations to your own storage: a self-hosted server takes a URL; the browser validates your tools service API key and sends only its SHA-256, so the server isolates users by hash and caps how many can exist. You can also enter S3-compatible object storage credentials directly. Sessions merge by id, so both devices can add, edit and delete; keys and settings are not synced.',
+    'Sync conversations to your own storage: a self-hosted server takes a URL; the browser validates your tools service API key and sends only its SHA-256, so the server isolates users by hash and caps how many can exist. You can also enter S3-compatible object storage credentials directly. Sessions merge by id, so both devices can add, edit and delete; only the session list syncs by default, and a chat downloads its messages and images when you open it; keys and settings are not synced.',
   syncTransport: 'Sync via',
   syncTransportServer: 'Self-hosted server',
   syncTransportS3: 'S3 object storage',

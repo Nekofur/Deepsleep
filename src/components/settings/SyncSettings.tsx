@@ -104,6 +104,8 @@ export const SyncSettings = () => {
     try {
       await verifyS3(config.s3)
       setNotice(t('syncS3Verified'))
+      // 连接成功后默认开启自动同步，之后切回页面或推理结束时都会拉取
+      updateSync({ enabled: true })
       setBusy(null)
       await sync()
     } catch (cause) {
@@ -203,6 +205,24 @@ export const SyncSettings = () => {
               onClick={() => void connect()}
             >
               {busy === 'connect' ? t('syncConnecting') : t('syncConnect')}
+            </Button>
+            <Button
+              variant="outlined"
+              size="m"
+              disabled={busy !== null || !linked}
+              onClick={() => void sync()}
+            >
+              {busy === 'sync' ? t('syncSyncing') : t('syncNow')}
+            </Button>
+            <Button
+              variant="outlined"
+              size="m"
+              aria-pressed={config.enabled}
+              disabled={busy !== null}
+              onClick={() => void toggleEnabled()}
+            >
+              {t('syncEnable')}
+              {config.enabled ? ' · ON' : ''}
             </Button>
             <span className={styles.hint}>{t('syncS3Hint')}</span>
           </div>

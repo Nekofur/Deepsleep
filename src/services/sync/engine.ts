@@ -200,7 +200,10 @@ export const syncNow = (): Promise<SyncResultSummary> => {
   return running
 }
 
-/** 同步时机：页面打开后同步一次，之后每次推理结束或删除会话时同步 */
+/**
+ * 同步时机：页面打开、切回页面/窗口获得焦点、每次推理结束或删除会话时。
+ * 没有定时轮询，但切回页面会主动拉取一次，避免另一台设备的改动一直不落地。
+ */
 export const startAutoSync = () => {
   const maybeSync = () => {
     const config = getSyncConfig()
@@ -212,9 +215,18 @@ export const startAutoSync = () => {
   }
   const initial = window.setTimeout(maybeSync, 3000)
   const unsubscribe = onSyncRequest(scheduleSync)
+  const onVisible = () => {
+    if (document.visibilityState === 'visible') {
+      maybeSync()
+    }
+  }
+  document.addEventListener('visibilitychange', onVisible)
+  window.addEventListener('focus', onVisible)
   return () => {
     window.clearTimeout(initial)
     unsubscribe()
+    document.removeEventListener('visibilitychange', onVisible)
+    window.removeEventListener('focus', onVisible)
   }
 }
 

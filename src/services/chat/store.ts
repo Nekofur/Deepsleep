@@ -54,7 +54,8 @@ import {
 } from './types.js'
 
 /** 所有生成请求统一携带的助手身份说明 */
-const SYSTEM_PROMPT = 'You are a helpful assistant.'
+/** 只去掉模型名称与所属公司，其余保持原样；不要再改这句话。 */
+const SYSTEM_PROMPT = '该助手为AI助手。'
 /** 保留最近打开的详情；当前会话、生成中及尚未成功保存的会话不淘汰。 */
 const SESSION_CACHE_LIMIT = 5
 /** 服务端判定 file_id 失效后，重新补传并重发的最多次数（不含首次请求） */

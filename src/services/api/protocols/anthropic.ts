@@ -52,7 +52,8 @@ const messageHeaders = (
 /** 文件块：file 源原样下发；local 源读取本地原件后内联为 base64，读不到就跳过 */
 const fileBlock = async (block: FileBlockParam, load: AttachmentLoader) => {
   if (block.source.type === 'file') {
-    return block
+    // 只回传协议字段，本地原件信息（local）不能出现在请求里
+    return { type: block.type, source: block.source }
   }
   const loaded = await load({ id: block.source.id, mediaType: block.source.media_type })
   return loaded

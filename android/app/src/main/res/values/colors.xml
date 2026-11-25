@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Capacitor 模板的 styles.xml 引用了这三个颜色，但生成的项目里没有定义，缺了会在 aapt2 链接阶段报错 -->
+    <color name="colorPrimary">#0B57D0</color>
+    <color name="colorPrimaryDark">#0B57D0</color>
+    <color name="colorAccent">#0B57D0</color>
+    <!-- 启动画面底色，深色模式在 values-night 里覆盖 -->
+    <color name="splash_background">#FFFFFF</color>
+</resources>

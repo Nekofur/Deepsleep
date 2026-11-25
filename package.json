@@ -7,15 +7,19 @@
   "type": "module",
   "scripts": {
     "dev": "rspack serve -c rspack.config.ts",
-    "build": "rm -rf dist && NODE_ENV=production rspack build -c rspack.config.ts",
-    "build:s3": "rm -rf dist && NODE_ENV=production SYNC_SERVER=0 rspack build -c rspack.config.ts",
+    "build": "node scripts/build.mjs",
+    "build:s3": "node scripts/build.mjs --no-sync",
     "sync": "node server/sync-server.mjs",
     "type": "tsc -p tsconfig.json",
     "lint": "oxlint src rspack.config.ts",
-    "format": "oxfmt --write ."
+    "format": "oxfmt --write .",
+    "android:sync": "pnpm build && cap sync android",
+    "android:build": "node scripts/android-build.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.6.2",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/browser": "^8.0.5",
     "@capacitor/core": "^8.6.2",
     "@types/katex": "^0.16.5",
     "@types/mdast": "~4.0.3",

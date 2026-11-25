@@ -10,3 +10,5 @@ build/
 !.env.example
 tmp/
 .sync-data/
+# 本地打出的 APK 交付目录，不入库
+output/

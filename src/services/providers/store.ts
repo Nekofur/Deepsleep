@@ -209,22 +209,41 @@ export const getActiveProvider = (): ProviderConfig | null => {
   return providers.find((provider) => provider.id === activeId) ?? null
 }
 
+/**
+ * 是否为 DeepSeek 服务：旧版模板（deepseek、deepseek-openai 等）可能已不在模板列表里，
+ * 或用户改过协议，此时不能只靠模板判断，否则会退化成「客户端预先搜索」。
+ */
+const isDeepSeekProvider = (provider: ProviderConfig): boolean => {
+  if (provider.presetId.startsWith('deepseek')) {
+    return true
+  }
+  const preset = findPreset(provider.presetId)
+  if (preset.extensions?.deepseek) {
+    return true
+  }
+  let host = ''
+  try {
+    host = new URL(provider.baseUrl).hostname
+  } catch {
+    host = ''
+  }
+  return /(^|\.)deepseek\.com$/i.test(host)
+}
+
 /** 供应商模板声明的能力覆盖只对同协议生效，用户改协议后回到该协议的默认能力 */
 export const getProviderFeatures = (provider: ProviderConfig): ProtocolFeatures => {
   const preset = findPreset(provider.presetId)
-  return {
+  const features = {
     ...PROTOCOL_FEATURES[provider.protocol],
     ...(preset.protocol === provider.protocol ? preset.features : undefined),
   }
+  // DeepSeek 兼容接口始终提供服务端搜索与标题，不依赖模板是否还在列表里
+  return isDeepSeekProvider(provider) ? { ...features, search: true, title: true } : features
 }
 
-export const getProviderExtensions = (provider: ProviderConfig): ProviderExtensions => {
-  const preset = findPreset(provider.presetId)
-  return {
-    deepseek: false,
-    ...(preset.protocol === provider.protocol ? preset.extensions : undefined),
-  }
-}
+export const getProviderExtensions = (provider: ProviderConfig): ProviderExtensions => ({
+  deepseek: isDeepSeekProvider(provider),
+})
 
 export const updateTools = (patch: Partial<ToolsConfig>) => {
   set((state) => ({ tools: { ...state.tools, ...patch } }))

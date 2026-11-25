@@ -22,14 +22,14 @@ type Settings = {
 }
 
 const KEYS = {
-  locale: 'chat-demo:locale',
-  location: 'chat-demo:location',
-  themePreference: 'chat-demo:theme-preference',
-  ttsVoice: 'chat-demo:tts-voice',
-  thinking: 'chat-demo:thinking',
-  thinkingLevel: 'chat-demo:thinking-level',
-  search: 'chat-demo:search',
-  siderCollapsed: 'chat-demo:sider-collapsed',
+  locale: 'deepsleep:locale',
+  location: 'deepsleep:location',
+  themePreference: 'deepsleep:theme-preference',
+  ttsVoice: 'deepsleep:tts-voice',
+  thinking: 'deepsleep:thinking',
+  thinkingLevel: 'deepsleep:thinking-level',
+  search: 'deepsleep:search',
+  siderCollapsed: 'deepsleep:sider-collapsed',
 } as const
 
 const read = (key: string) => {

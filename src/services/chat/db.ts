@@ -52,9 +52,52 @@ const abortTransaction = (tx: { abort(): void }) => {
   }
 }
 
-// 每个操作拿到连接后立即创建事务；IndexedDB 按创建顺序执行范围重叠的事务，读取总能看到之前发起的写入。
-const getDB = () =>
-  (dbPromise ??= openDB<ChatDB>('chat-demo', DB_VERSION, {
+/** 旧版本使用的数据库名，首次打开新库时整体搬迁一次 */
+const DB_NAME = 'deepsleep'
+const LEGACY_DB_NAME = 'chat-demo'
+let legacyMigrated = false
+
+/** 新库为空时，把旧 chat-demo 库的会话、摘要与原件复制过来 */
+const migrateLegacyDb = async (db: IDBPDatabase<ChatDB>) => {
+  if (legacyMigrated) {
+    return
+  }
+  legacyMigrated = true
+  try {
+    if ((await db.count('sessions')) > 0 || (await db.count('files')) > 0) {
+      return
+    }
+    const databases = indexedDB.databases ? await indexedDB.databases() : []
+    if (!databases.some((info) => info.name === LEGACY_DB_NAME)) {
+      return
+    }
+    const legacy = (await openDB(LEGACY_DB_NAME)) as unknown as IDBPDatabase<ChatDB>
+    try {
+      const [sessions, summaries, files] = await Promise.all([
+        legacy.getAll('sessions'),
+        legacy.getAll('sessionSummaries'),
+        legacy.getAll('files'),
+      ])
+      if (sessions.length === 0 && files.length === 0) {
+        return
+      }
+      const tx = db.transaction(['sessions', 'sessionSummaries', 'files'], 'readwrite')
+      await Promise.all([
+        ...sessions.map((value) => tx.objectStore('sessions').put(value)),
+        ...summaries.map((value) => tx.objectStore('sessionSummaries').put(value)),
+        ...files.map((value) => tx.objectStore('files').put(value)),
+      ])
+      await tx.done
+    } finally {
+      legacy.close()
+    }
+  } catch {
+    // 旧库不存在或无法读取时保持新库为空即可
+  }
+}
+
+const openDatabase = async () => {
+  const db = await openDB<ChatDB>(DB_NAME, DB_VERSION, {
     upgrade(db, _oldVersion, _newVersion, tx) {
       // 初始化当前格式需要的存储与索引，不迁移旧消息。
       for (const name of ['sessions', 'files', 'sessionsStaging', 'filesStaging'] as const) {
@@ -69,7 +112,14 @@ const getDB = () =>
         summaries.createIndex('fileIds', 'fileIds', { multiEntry: true })
       }
     },
-  }).catch((error: unknown) => {
+  })
+  await migrateLegacyDb(db)
+  return db
+}
+
+// 每个操作拿到连接后立即创建事务；IndexedDB 按创建顺序执行范围重叠的事务，读取总能看到之前发起的写入。
+const getDB = () =>
+  (dbPromise ??= openDatabase().catch((error: unknown) => {
     // 打开失败后允许界面重试，避免一直复用已拒绝的 Promise。
     dbPromise = null
     throw error

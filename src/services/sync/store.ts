@@ -11,7 +11,7 @@ const DEFAULT_S3: S3Config = {
   endpoint: '',
   region: 'auto',
   bucket: '',
-  prefix: 'chat-demo/',
+  prefix: 'deepsleep/',
   accessKeyId: '',
   secretAccessKey: '',
   pathStyle: true,
@@ -35,7 +35,7 @@ export type SyncConfig = {
   tombstones: Record<string, number>
 }
 
-const STORAGE_KEY = 'chat-demo:sync'
+const STORAGE_KEY = 'deepsleep:sync'
 
 const read = () => {
   try {

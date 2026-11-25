@@ -11,9 +11,9 @@ import {
 } from './types.js'
 
 /** 供应商、当前选择与工具服务，存 localStorage；Key 与旧版本一样只保存在本机 */
-const STORAGE_KEY = 'chat-demo:providers'
+const STORAGE_KEY = 'deepsleep:providers'
 /** 旧版本只保存一个 API Key，升级时迁移为 DeepSeek 供应商 */
-const LEGACY_API_KEY = 'chat-demo:api-key'
+const LEGACY_API_KEY = 'deepsleep:api-key'
 
 type ProvidersState = {
   providers: ProviderConfig[]

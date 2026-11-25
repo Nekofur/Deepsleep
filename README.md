@@ -2,17 +2,17 @@
 
 English | [简体中文](README.zh-CN.md)
 
-A static chat demo with pluggable model providers, four wire protocols, and optional self-hosted conversation sync. No application backend is required for chatting: the browser connects directly to the configured provider. Sync is optional and talks to the small server bundled in [`server/`](server/sync-server.mjs).
+A static chat app with pluggable model providers, four wire protocols, and optional self-hosted conversation sync. No application backend is required for chatting: the browser connects directly to the configured provider. Sync is optional and talks to the small server bundled in [`server/`](server/sync-server.mjs).
 
-You can [try the app online](https://deepseek-ai.github.io/chat-demo/) or download the archive from [Releases](https://github.com/deepseek-ai/deepseek-chat-demo/releases), extract it, and double-click `index.html` to use it locally without installation or a build. Add a provider in Settings before your first chat.
+Clone the repository, or download the archive from [Releases](https://github.com/point-zip/Deepsleep/releases), extract it, and double-click `index.html` to use it locally without installation or a build. Add a provider in Settings before your first chat.
 
 ## Getting started
 
 Install Node.js 22.12+ and pnpm, then run:
 
 ```sh
-git clone https://github.com/deepseek-ai/chat-demo.git
-cd chat-demo
+git clone https://github.com/point-zip/Deepsleep.git
+cd Deepsleep
 pnpm install
 pnpm dev
 ```

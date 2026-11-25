@@ -11,7 +11,7 @@ import { SyncError } from './errors.js'
  * v3 起改用 manifest.json.gz + sessions/<id>.json.gz（见 manifest.ts），
  * 这个模块只为兼容旧构建保留，同步引擎不再引用。
  */
-export const SYNC_FORMAT = 'chat-demo-sync'
+export const SYNC_FORMAT = 'deepsleep-sync'
 export const SYNC_VERSION = 2
 
 export type SyncState = {

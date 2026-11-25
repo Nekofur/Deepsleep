@@ -5,7 +5,7 @@ import { SyncError } from './errors.js'
  * 用户在设置里填写 endpoint / region / bucket / AccessKey，签名在浏览器内用 WebCrypto 完成，
  * 因此不需要自建同步服务器。
  *
- * 对象布局（prefix 默认 chat-demo/）：
+ * 对象布局（prefix 默认 deepsleep/）：
  * - {prefix}manifest.json.gz：会话列表、删除记录与图片清单，其 ETag 用作版本条件；
  * - {prefix}sessions/<会话 id>.json.gz：每个会话的正文，按需上传与下载；
  * - {prefix}files/<附件 id>：图片原件，按需上传。
@@ -19,7 +19,7 @@ export type S3Config = {
   /** 区域，例如 us-east-1；R2 填 auto */
   region: string
   bucket: string
-  /** 对象前缀，默认 chat-demo/ */
+  /** 对象前缀，默认 deepsleep/ */
   prefix: string
   accessKeyId: string
   secretAccessKey: string

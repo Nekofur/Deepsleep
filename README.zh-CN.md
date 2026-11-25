@@ -4,15 +4,15 @@
 
 支持多家供应商、四种接口协议，并可选用自建服务器做会话同步的静态聊天示例。聊天无需应用后端，浏览器直接请求配置的供应商；同步是可选项，连接仓库自带的 [`server/`](server/sync-server.mjs)。
 
-点击 [在线体验](https://deepseek-ai.github.io/chat-demo/) 即可使用，也可以前往 [Releases](https://github.com/deepseek-ai/deepseek-chat-demo/releases) 下载压缩包，解压后双击 `index.html` 在本地使用，无需安装或构建。首次使用时，请在设置中添加一个供应商。
+克隆仓库，或前往 [Releases](https://github.com/point-zip/Deepsleep/releases) 下载压缩包，解压后双击 `index.html` 在本地使用，无需安装或构建。首次使用时，请在设置中添加一个供应商。
 
 ## 运行
 
 准备 Node.js 22.12+ 和 pnpm：
 
 ```sh
-git clone https://github.com/deepseek-ai/chat-demo.git
-cd chat-demo
+git clone https://github.com/point-zip/Deepsleep.git
+cd Deepsleep
 pnpm install
 pnpm dev
 ```

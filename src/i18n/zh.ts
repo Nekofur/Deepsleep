@@ -257,7 +257,7 @@ export const zh = {
   syncCredentialMissing: '还没有填写工具服务 API Key',
   syncConfigureTools: '配置工具服务',
   syncEnable: '启用同步',
-  syncEnableHint: '开启后先校验 Key，再立即同步一次，之后每 5 分钟自动同步。',
+  syncEnableHint: '开启后先校验 Key，再立即同步一次；之后每次回答结束和页面刷新时同步。',
   syncServerHint:
     '仓库自带 server/sync-server.mjs，可用 pnpm sync 在本地启动；服务器会用工具服务的 Key 校验身份。',
   syncConnect: '连接并同步',
@@ -266,7 +266,7 @@ export const zh = {
   syncNow: '立即同步',
   syncSyncing: '正在同步...',
   syncAuto: '自动同步',
-  syncAutoHint: '打开后每 5 分钟同步一次，窗口重新可见时也会同步。',
+  syncAutoHint: '开启后每次回答结束和页面刷新时同步。',
   syncNever: '尚未同步',
   syncLastSynced: '上次同步：{time}',
   syncUpToDate: '已是最新',

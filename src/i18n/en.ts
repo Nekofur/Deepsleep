@@ -270,7 +270,7 @@ export const en = {
   syncCredentialMissing: 'No tools service API key yet',
   syncConfigureTools: 'Configure tools',
   syncEnable: 'Enable sync',
-  syncEnableHint: 'Validates the key, syncs immediately, then every 5 minutes.',
+  syncEnableHint: 'Validates the key, syncs immediately, then after each reply and on page load.',
   syncServerHint:
     'This repository ships server/sync-server.mjs; start it locally with pnpm sync. The server verifies the tools service key.',
   syncConnect: 'Connect and sync',
@@ -279,7 +279,7 @@ export const en = {
   syncNow: 'Sync now',
   syncSyncing: 'Syncing...',
   syncAuto: 'Auto sync',
-  syncAutoHint: 'Syncs every 5 minutes and whenever the window becomes visible again.',
+  syncAutoHint: 'Syncs after each reply and on page load.',
   syncNever: 'Never synced',
   syncLastSynced: 'Last synced: {time}',
   syncUpToDate: 'Already up to date',

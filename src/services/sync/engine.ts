@@ -21,11 +21,11 @@ import {
   type SyncResultSummary,
 } from './store.js'
 import { createTransport, type SyncTransport } from './transport.js'
+import { onSyncRequest } from './signals.js'
 
 /** 冲突时重新拉取合并的最多次数 */
 const CONFLICT_RETRY = 1
 /** 自动同步间隔 */
-const AUTO_INTERVAL = 5 * 60 * 1000
 
 /** 与服务端错误码一一对应的文案；服务器异常时把原文填进 message */
 const errorMessages: Record<SyncErrorCode, TranslationMessage> = {
@@ -200,7 +200,7 @@ export const syncNow = (): Promise<SyncResultSummary> => {
   return running
 }
 
-/** 自动同步：启动时、窗口重新可见 / 获得焦点时以及每隔几分钟执行一次 */
+/** 同步时机：页面打开后同步一次，之后每次推理结束或删除会话时同步 */
 export const startAutoSync = () => {
   const maybeSync = () => {
     const config = getSyncConfig()
@@ -211,19 +211,10 @@ export const startAutoSync = () => {
     }
   }
   const initial = window.setTimeout(maybeSync, 3000)
-  const timer = window.setInterval(maybeSync, AUTO_INTERVAL)
-  const onVisible = () => {
-    if (document.visibilityState === 'visible') {
-      maybeSync()
-    }
-  }
-  document.addEventListener('visibilitychange', onVisible)
-  window.addEventListener('focus', onVisible)
+  const unsubscribe = onSyncRequest(scheduleSync)
   return () => {
     window.clearTimeout(initial)
-    window.clearInterval(timer)
-    document.removeEventListener('visibilitychange', onVisible)
-    window.removeEventListener('focus', onVisible)
+    unsubscribe()
   }
 }
 

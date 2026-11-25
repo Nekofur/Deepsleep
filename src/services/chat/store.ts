@@ -26,6 +26,7 @@ import { useSettings } from '../settings.js'
 import { extractUrls, runClientTools } from './clientTools.js'
 import { appendBranch, getVisibleMessages, normalizeSession, selectVersion } from './branches.js'
 import { recordTombstone } from '../sync/store.js'
+import { requestSync } from '../sync/signals.js'
 import { SyncError } from '../sync/errors.js'
 import * as db from './db.js'
 import {
@@ -1197,6 +1198,7 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
       ),
     }))
     persist(sessionId)
+    requestSync()
   }
 }
 

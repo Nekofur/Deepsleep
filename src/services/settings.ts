@@ -105,7 +105,8 @@ export const useSettings = create<Settings>(() => ({
   location: initialLocation(),
   themePreference: initialThemePreference(),
   ttsVoice: initialTtsVoice(),
-  thinking: read(KEYS.thinking) === 'true',
+  // 默认让模型自己决定：DeepSeek 思考模式默认开启，只有明确关闭时才下发 disabled
+  thinking: read(KEYS.thinking) !== 'false',
   thinkingLevel: initialThinkingLevel(),
   search: read(KEYS.search) === 'true',
   siderCollapsed: read(KEYS.siderCollapsed) === 'true',

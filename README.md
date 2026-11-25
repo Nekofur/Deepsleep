@@ -53,7 +53,7 @@ Presets are included for DeepSeek (Messages, Chat Completions, and Responses), O
 | OpenAI Responses        | `{base}/responses`                            | OpenAI GPT-5 / o-series, DeepSeek                                                   |
 | Google Gemini           | `{base}/models/{model}:streamGenerateContent` | Google AI Studio                                                                    |
 
-- **Reasoning**: reasoning deltas are parsed for all four protocols (`reasoning_content`, `reasoning`, `response.reasoning_*`, `parts[].thought`). Settings → General → Reasoning effort offers minimal, low, medium, high, extra high, and maximum; adapters translate it into `reasoning_effort` (OpenAI), `thinking.budget_tokens` (Anthropic-compatible), or `thinkingConfig.thinkingBudget` (Gemini). DeepSeek only exposes an on/off switch.
+- **Reasoning**: reasoning deltas are parsed for all four protocols (`reasoning_content`, `reasoning`, `response.reasoning_*`, `parts[].thought`). Settings → General → Reasoning effort offers minimal, low, medium, high, extra high, and maximum; adapters translate it into `reasoning_effort` (OpenAI), `thinking.budget_tokens` (Anthropic-compatible), or `thinkingConfig.thinkingBudget` (Gemini). DeepSeek thinking defaults to on, where the model decides whether to reason; turning the switch off sends `thinking: { type: "disabled" }` (or `reasoning.effort: "none"` on Responses) so the model answers directly.
 - **Search**: DeepSeek providers get server-side `deepseek_web_search` / `deepseek_read_url` on all three DeepSeek protocols. Other chat providers can still search: the app calls the official Search and Fetch APIs from the tools service and sends the results with the question. Gemini's own `googleSearch` is intentionally not injected.
 - **Attachments**: when the provider exposes a Files API (Anthropic protocol) attachments are uploaded and referenced by file ID. Otherwise images and PDFs up to 8 MB are inlined into the request; other documents are read with OCR from the tools service when it is configured, otherwise they keep their metadata and are not sent.
 - **Titles**: DeepSeek returns a server-generated title; other providers get a title derived from the first question.
@@ -81,7 +81,7 @@ A sync downloads only the small state file, merges it per session id (newest `up
 SYNC_MAX_USERS=20 pnpm sync
 ```
 
-The browser validates the tools service API key against the provider (`GET /models`) and then sends only its SHA-256 to the sync server. The server never sees the raw key: it uses the hash as the user id, keeps each user in their own directory, and rejects new users once `SYNC_MAX_USERS` is reached. In Settings → Sync choose the server transport, enter the URL, and turn on **Enable sync**: the key is validated, a sync runs immediately, then every five minutes.
+The browser validates the tools service API key against the provider (`GET /models`) and then sends only its SHA-256 to the sync server. The server never sees the raw key: it uses the hash as the user id, keeps each user in their own directory, and rejects new users once `SYNC_MAX_USERS` is reached. In Settings → Sync choose the server transport, enter the URL, and turn on **Enable sync**: the key is validated, a sync runs immediately, then after each reply and on page load.
 
 | Variable           | Default        | Purpose                                                                                |
 | ------------------ | -------------- | -------------------------------------------------------------------------------------- |
@@ -111,7 +111,7 @@ Conditional writes use `If-None-Match: *` for the first upload and `If-Match` af
 - Sessions merge by id; the newer `updatedAt` wins, and deletions are carried by tombstones so a session deleted on one device is removed on the others.
 - The state write is conditional on the remote ETag/revision; if another device wrote first the client re-reads, merges again, and retries once instead of overwriting.
 - Models, branches, citations, and reasoning timings survive a round trip. Image originals are synced; non-image attachments keep metadata only.
-- Auto sync runs every five minutes, when the window becomes visible again, and shortly after a local deletion.
+- Sync runs when the page opens, after each reply finishes, and shortly after a local deletion.
 
 ## Data and storage
 

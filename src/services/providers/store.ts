@@ -54,23 +54,10 @@ const normalizeProvider = (value: unknown): ProviderConfig | null => {
     return null
   }
   const preset = findPreset(text(raw.presetId, 'custom'))
-  // 旧版默认模型是 deepseek-chat（非思考模型），换成支持思考的新模型名
-  const legacyDeepSeek: Record<string, string> = {
-    'deepseek-chat': 'deepseek-flash',
-    'deepseek-reasoner': 'deepseek-v4-pro',
-  }
-  const deepseek = text(raw.presetId, '').startsWith('deepseek')
-  const rename = (name: string) => (deepseek ? (legacyDeepSeek[name] ?? name) : name)
   const models = Array.isArray(raw.models)
-    ? [
-        ...new Set(
-          raw.models
-            .filter((item): item is string => typeof item === 'string' && !!item)
-            .map(rename)
-        ),
-      ]
+    ? [...new Set(raw.models.filter((item): item is string => typeof item === 'string' && !!item))]
     : []
-  const model = rename(text(raw.model) || models[0] || '')
+  const model = text(raw.model) || models[0] || ''
   return {
     id: raw.id,
     presetId: preset.id,

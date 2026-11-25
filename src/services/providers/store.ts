@@ -240,12 +240,7 @@ const isDeepSeekProvider = (provider: ProviderConfig): boolean => {
   } catch {
     host = ''
   }
-  if (/(^|\.)deepseek\.com$/i.test(host)) {
-    return true
-  }
-  // 走自建代理时域名不是 deepseek.com，但模型名仍然是 deepseek-* 时按 DeepSeek 处理
-  const models = [provider.model, ...provider.models]
-  return models.some((model) => /^deepseek/i.test(model))
+  return /(^|\.)deepseek\.com$/i.test(host)
 }
 
 /** 供应商模板声明的能力覆盖只对同协议生效，用户改协议后回到该协议的默认能力 */

@@ -6,7 +6,6 @@ import type {
   MessageStreamEvent,
   MessageUsage,
   StopReason,
-  ThinkingLevel,
 } from '../types.js'
 import { BlockStream, mapFinishReason, usageOf } from './blocks.js'
 import { dataUrl, localRef } from './inline.js'
@@ -15,16 +14,6 @@ import type { AttachmentLoader, ProtocolAdapter, StreamOptions } from './types.j
 import { UNAVAILABLE_ATTACHMENT_TEXT } from './types.js'
 
 const baseUrl = (base: string) => trimBaseUrl(base)
-
-/** 思考等级映射到 DeepSeek 的 reasoning_effort（官方只接受 low/high/max） */
-const DEEPSEEK_EFFORT: Record<ThinkingLevel, string> = {
-  minimal: 'low',
-  low: 'low',
-  medium: 'high',
-  high: 'high',
-  xhigh: 'high',
-  max: 'max',
-}
 
 const authorization = (apiKey: string) => ({
   Authorization: `Bearer ${apiKey}`,
@@ -130,9 +119,6 @@ async function* stream(options: StreamOptions): AsyncGenerator<MessageStreamEven
   if (deepseek) {
     // DeepSeek 的 Chat Completions 与 Messages 一致：思考、服务端工具、安全校验和标题都在服务端完成
     body.thinking = { type: chat.thinking ? 'enabled' : 'disabled' }
-    if (chat.thinking) {
-      body.reasoning_effort = DEEPSEEK_EFFORT[chat.thinkingLevel]
-    }
     body.tools = [
       { type: 'deepseek_read_url', name: 'deepseek_read_url' },
       ...(chat.search ? [{ type: 'deepseek_web_search', name: 'deepseek_web_search' }] : []),

@@ -8,6 +8,7 @@ import { loadFile } from './chat/db.js'
 import type { FileAttachment } from './chat/types.js'
 import { getProviderFeatures, getProviderExtensions } from './providers/store.js'
 import type { ProviderConfig } from './providers/types.js'
+import { useSettings } from './settings.js'
 import { ACCEPT_FILE_EXTS } from './uploadExts.js'
 
 /** 允许上传的扩展名，按扩展名白名单过滤，清单见 uploadExts.ts */
@@ -33,10 +34,17 @@ export const isAcceptedExt = (name: string) => ACCEPTED_EXTS.includes(getFileExt
 /** 需要服务端做版面解析的文档；其余非图片文件（纯文本、代码、表格、电子书）无需解析 */
 const LAYOUT_RECOGNITION_EXTS = new Set(['pdf', 'doc', 'docx', 'ppt', 'pptx'])
 
-/** 上传时的 purpose：图片不传，PDF 与 Word、PPT 做版面解析，其余按 user_data 上传 */
+/**
+ * 上传时的 purpose：图片不传；非图片默认按扩展名决定，
+ * 高级设置里选定解析方式后整批按所选方式上传（auto 保持按扩展名的原有规则）。
+ */
 export const getUploadPurpose = (name: string, isImage: boolean): FilePurpose | null => {
   if (isImage) {
     return null
+  }
+  const mode = useSettings.getState().advanced.uploadPurpose
+  if (mode !== 'auto') {
+    return mode
   }
   return LAYOUT_RECOGNITION_EXTS.has(getFileExt(name)) ? 'rich_layout_recognition' : 'user_data'
 }

@@ -523,3 +523,17 @@ export const IconToastError16 = () => (
     />
   </svg>
 )
+
+/** 高级设置图标：两条滑杆 + 旋钮，表示可调参数 */
+export const IconSlidersOutline16 = () => (
+  <svg width={16} height={16} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path
+      d="M2.5 5h3.2M8.3 5h5.2M2.5 11h5.2M10.3 11h3.2"
+      stroke="currentColor"
+      strokeWidth={1.2}
+      strokeLinecap="round"
+    />
+    <circle cx="7" cy="5" r="1.9" fill="currentColor" />
+    <circle cx="9" cy="11" r="1.9" fill="currentColor" />
+  </svg>
+)

@@ -10,6 +10,7 @@ import type {
 import { BlockStream, usageOf } from './blocks.js'
 import { dataUrl, localRef } from './inline.js'
 import { asNumber, asString, at, isRecord } from './json.js'
+import { applyResponsesSampling, applySafetyCheck } from './options.js'
 import type { AttachmentLoader, ProtocolAdapter, StreamOptions } from './types.js'
 import { UNAVAILABLE_ATTACHMENT_TEXT } from './types.js'
 
@@ -103,22 +104,26 @@ async function* stream(options: StreamOptions): AsyncGenerator<MessageStreamEven
   }
   if (deepseek) {
     // DeepSeek 的 Responses 接口同样在服务端完成搜索、阅读链接与安全校验
-    // Responses 里 low 仍然是思考，只有 none 才是关闭
-    body.reasoning = { effort: chat.thinking ? 'high' : 'none' }
+    // Responses 里 low 仍然是思考，只有 none 才是关闭；关闭时不考虑用户指定的强度
+    body.reasoning = { effort: chat.thinking ? (chat.reasoningEffort ?? 'high') : 'none' }
     body.tools = [
       { type: 'deepseek_read_url' },
       ...(chat.search ? [{ type: 'deepseek_web_search' }] : []),
     ]
-    body.safety_check = { level: 'high' }
+    applySafetyCheck(body, chat.safetyCheck)
     if (chat.title) {
       body.title = { enabled: true }
     }
+  } else if (chat.reasoningEffort) {
+    // 高级设置里指定了原值：直接下发，不再限定 o 系列与 GPT-5
+    body.reasoning = { effort: chat.reasoningEffort }
   } else if (
     (provider.presetId === 'openai' || provider.presetId === 'openai-responses') &&
     /^(o\d|gpt-5)/i.test(chat.model)
   ) {
     body.reasoning = { effort: chat.thinking ? chat.thinkingLevel : 'minimal' }
   }
+  applyResponsesSampling(body, chat.sampling)
   const response = await request(`${baseUrl(provider.baseUrl)}/responses`, {
     method: 'POST',
     headers: { ...authorization(provider.apiKey), Accept: 'text/event-stream' },

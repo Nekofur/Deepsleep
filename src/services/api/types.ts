@@ -191,9 +191,29 @@ export const THINKING_LEVELS: readonly ThinkingLevel[] = [
   'max',
 ]
 
+/** DeepSeek 私有安全审查档位；off 表示整个 safety_check 字段不发送 */
+export type SafetyCheckLevel = 'high' | 'low' | 'off'
+
+/**
+ * 思考强度原值：设置后各协议按原值下发，不再走 budget_tokens 等换算
+ * （OpenAI 的 reasoning_effort、DeepSeek 兼容端的 reasoning.effort）。
+ */
+export type ReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'max'
+
+/** 采样参数：未填写的项不下发，由服务端使用自己的默认值 */
+export type SamplingParams = {
+  temperature?: number
+  topP?: number
+  maxTokens?: number
+  presencePenalty?: number
+  frequencyPenalty?: number
+  stop?: string[]
+}
+
 /**
  * 规范请求：协议无关的部分，由适配器翻译成服务端格式。
- * thinking / search / title 对应界面开关，适配器按供应商能力决定是否下发。
+ * thinking / search / title 对应界面开关，适配器按供应商能力决定是否下发；
+ * safetyCheck / reasoningEffort / sampling 是高级设置，默认不下发或按原逻辑下发。
  */
 export type ChatRequest = {
   model: string
@@ -206,6 +226,12 @@ export type ChatRequest = {
   search: boolean
   /** 请求服务端生成会话标题（仅 DeepSeek 扩展支持） */
   title: boolean
+  /** DeepSeek 扩展的安全审查档位；off 时不下发该字段 */
+  safetyCheck: SafetyCheckLevel
+  /** 思考强度原值；缺省时按协议原有映射（budget_tokens 等） */
+  reasoningEffort?: ReasoningEffort
+  /** 采样参数；思考模式下部分服务会忽略其中几项 */
+  sampling: SamplingParams
 }
 
 // ---------- 响应：流式事件 ----------
@@ -263,7 +289,7 @@ export type MessageStreamEvent =
  * POST /anthropic/v1/files 的 purpose：PDF 与 Word、PPT 需要服务端做版面解析；
  * 纯文本、代码、表格与电子书不需要解析，用 user_data。
  */
-export type FilePurpose = 'rich_layout_recognition' | 'user_data'
+export type FilePurpose = 'rich_layout_recognition' | 'text_recognition' | 'user_data'
 
 /** POST /anthropic/v1/files 的响应 */
 export type FileObject = {

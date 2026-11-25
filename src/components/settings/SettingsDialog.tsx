@@ -10,6 +10,7 @@ import {
   IconRefreshOutline16,
   IconSearchOutline16,
   IconSettingsOutline16,
+  IconSlidersOutline16,
   IconUploadOutline14,
 } from '../base/icons.js'
 import {
@@ -36,6 +37,7 @@ import { Button } from '../base/Button.js'
 import { Modal } from '../base/Modal.js'
 import { Select } from '../base/Select.js'
 import { showToast } from '../base/toastState.js'
+import { AdvancedSettings } from './AdvancedSettings.js'
 import { ProviderSettings } from './ProviderSettings.js'
 import { SyncSettings } from './SyncSettings.js'
 import { ToolsSettings } from './ToolsSettings.js'
@@ -62,6 +64,11 @@ const sections: { value: SettingsSection; label: TranslationKey; icon: ReactNode
     value: 'providers',
     label: 'settingDialogAsideProvidersOptionLabel',
     icon: <IconLinkOutline16 />,
+  },
+  {
+    value: 'advanced',
+    label: 'settingDialogAsideAdvancedOptionLabel',
+    icon: <IconSlidersOutline16 />,
   },
   {
     value: 'tools',
@@ -123,6 +130,8 @@ const SettingsContent = () => {
             </>
           ) : section === 'providers' ? (
             <ProviderSettings />
+          ) : section === 'advanced' ? (
+            <AdvancedSettings />
           ) : section === 'tools' ? (
             <ToolsSettings />
           ) : section === 'sync' ? (

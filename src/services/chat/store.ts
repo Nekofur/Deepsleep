@@ -1119,6 +1119,7 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
           latestReminder,
           clientRun?.context
         )
+        const advanced = useSettings.getState().advanced
         const chat: ChatRequest = {
           model: initial.model ?? provider.model,
           system: SYSTEM_PROMPT,
@@ -1128,6 +1129,9 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
           // 服务端搜索只在供应商支持时下发；客户端搜索已在上方完成
           search: (initial.search ?? false) && features.search,
           title: features.title && titleRequests.has(controller),
+          safetyCheck: advanced.safetyCheck,
+          reasoningEffort: advanced.reasoningEffort === 'auto' ? undefined : advanced.reasoningEffort,
+          sampling: advanced.sampling,
         }
         const events = (async function* () {
           if (clientRun) {

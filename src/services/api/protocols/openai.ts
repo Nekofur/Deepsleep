@@ -10,6 +10,7 @@ import type {
 import { BlockStream, mapFinishReason, usageOf } from './blocks.js'
 import { dataUrl, localRef } from './inline.js'
 import { asNumber, asString, at, isRecord } from './json.js'
+import { applyChatSampling, applySafetyCheck } from './options.js'
 import type { AttachmentLoader, ProtocolAdapter, StreamOptions } from './types.js'
 import { UNAVAILABLE_ATTACHMENT_TEXT } from './types.js'
 
@@ -123,14 +124,18 @@ async function* stream(options: StreamOptions): AsyncGenerator<MessageStreamEven
       { type: 'deepseek_read_url', name: 'deepseek_read_url' },
       ...(chat.search ? [{ type: 'deepseek_web_search', name: 'deepseek_web_search' }] : []),
     ]
-    body.safety_check = { level: 'high' }
+    applySafetyCheck(body, chat.safetyCheck)
     if (chat.title) {
       body.title = { enabled: true }
     }
+  } else if (chat.reasoningEffort) {
+    // 高级设置里指定了原值：直接下发，不再限定 o 系列与 GPT-5
+    body.reasoning_effort = chat.reasoningEffort
   } else if (sendsReasoningEffort(provider, chat.model)) {
     // 思考等级直接映射到 OpenAI 的 reasoning_effort；关闭时给最低档，避免模型长时间思考。
     body.reasoning_effort = chat.thinking ? chat.thinkingLevel : 'minimal'
   }
+  applyChatSampling(body, chat.sampling)
   const response = await request(`${baseUrl(provider.baseUrl)}/chat/completions`, {
     method: 'POST',
     headers: { ...authorization(provider.apiKey), Accept: 'text/event-stream' },

@@ -1,8 +1,8 @@
 import { create } from 'zustand'
 import { getActiveProvider, isProviderUsable } from '../../services/providers/store.js'
 
-/** 设置弹窗的分组：通用设置 / 模型服务 / 工具服务 / 同步 / 数据管理 */
-export type SettingsSection = 'general' | 'providers' | 'tools' | 'sync' | 'data'
+/** 设置弹窗的分组：通用设置 / 模型服务 / 高级参数 / 工具服务 / 同步 / 数据管理 */
+export type SettingsSection = 'general' | 'providers' | 'advanced' | 'tools' | 'sync' | 'data'
 
 /** 设置弹窗：侧边栏底部、没有可用供应商时的操作与 401 提示都可以打开；section 为打开时选中的分组 */
 export const useSettingsDialog = create(() => ({

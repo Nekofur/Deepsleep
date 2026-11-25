@@ -18,6 +18,7 @@ import type {
   ThinkingLevel,
 } from '../types.js'
 import type { AttachmentLoader, ProtocolAdapter, StreamOptions } from './types.js'
+import { applyAnthropicSampling, applySafetyCheck } from './options.js'
 import { UNAVAILABLE_ATTACHMENT_TEXT } from './types.js'
 
 /** Anthropic Messages 接口的版本头，官方服务必传；DeepSeek 兼容接口不需要 */
@@ -149,15 +150,30 @@ const requestBody = (
   if (deepseek) {
     body.thinking = { type: request.thinking ? 'enabled' : 'disabled' }
     body.tools = tools(request.search)
-    body.safety_check = { level: 'high' }
+    applySafetyCheck(body, request.safetyCheck)
     if (request.title) {
       body.title = { enabled: true }
+    }
+    applyAnthropicSampling(body, request.sampling)
+    if (request.sampling.maxTokens !== undefined) {
+      body.max_tokens = request.sampling.maxTokens
     }
     return body
   }
   const budget = THINKING_BUDGET[request.thinkingLevel]
-  body.max_tokens = Math.max(MAX_TOKENS, budget + 4096)
-  if (request.thinking) {
+  const requested = request.sampling.maxTokens
+  body.max_tokens =
+    requested === undefined
+      ? Math.max(MAX_TOKENS, budget + 4096)
+      : request.thinking
+        ? // 官方 Anthropic 要求 max_tokens 大于思考预算，填得更小时抬到预算之上
+          Math.max(requested, budget + 1024)
+        : requested
+  applyAnthropicSampling(body, request.sampling)
+  if (request.reasoningEffort) {
+    // DeepSeek 兼容端与其他网关用 reasoning.effort 表达思考强度，不再下发预算
+    body.reasoning = { effort: request.reasoningEffort }
+  } else if (request.thinking) {
     body.thinking = { type: 'enabled', budget_tokens: budget }
   }
   return body

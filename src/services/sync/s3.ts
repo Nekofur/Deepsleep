@@ -259,15 +259,13 @@ export const writeS3Manifest = async (
   bytes: Uint8Array<ArrayBuffer>,
   etag: string | null,
   signal?: AbortSignal
-): Promise<{ etag: string }> =>
-  putObject(
-    config,
-    manifestKeyOf(config),
-    bytes,
-    'application/gzip',
-    etag ? { 'If-Match': etag } : { 'If-None-Match': '*' },
-    signal
-  )
+): Promise<{ etag: string }> => {
+  // etag 为空字符串说明清单读取成功但 CORS 没有暴露 ETag，无法做条件写；
+  // 此时退化为普通覆盖写，否则 If-None-Match: * 会一直 412。
+  const conditional: Record<string, string> =
+    etag === '' ? {} : etag ? { 'If-Match': etag } : { 'If-None-Match': '*' }
+  return putObject(config, manifestKeyOf(config), bytes, 'application/gzip', conditional, signal)
+}
 
 /** 读取单个会话正文；不存在时返回 null */
 export const readS3Session = async (

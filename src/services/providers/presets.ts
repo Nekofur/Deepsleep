@@ -13,7 +13,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     url: 'https://platform.deepseek.com/api_keys',
     protocol: 'openai',
     baseUrl: API_ORIGIN,
-    models: ['deepseek-chat', 'deepseek-reasoner'],
+    models: ['deepseek-flash', 'deepseek-v4-pro'],
     features: { search: true, title: true },
     extensions: { deepseek: true },
   },

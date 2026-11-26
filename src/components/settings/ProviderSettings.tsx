@@ -7,6 +7,7 @@ import { getAdapter } from '../../services/api/protocols/index.js'
 import { PROVIDER_PRESETS, findPreset } from '../../services/providers/presets.js'
 import {
   addProvider,
+  isOfficialDeepSeekUrl,
   removeProvider,
   updateProvider,
   useProviders,
@@ -138,6 +139,11 @@ export const ProviderSettings = () => {
 const ProviderEditor = ({ provider, onDone }: { provider: ProviderConfig; onDone: () => void }) => {
   const t = useTranslate()
   const preset = findPreset(provider.presetId)
+  // 官方模板的地址固定；要接中转站请用 Custom 模板，否则私有字段会被网关拒绝
+  const official = provider.presetId === 'deepseek'
+  // 官方 Key 以 sk- 开头；这里只做提醒，不阻断保存
+  const keyNotOfficial =
+    official && provider.apiKey.trim() !== '' && !provider.apiKey.trim().startsWith('sk-')
   // 模型列表用多行文本编辑，失焦或拉取成功后写回设置
   const [models, setModels] = useState(() => provider.models.join('\n'))
   const [busy, setBusy] = useState<'verify' | 'models' | null>(null)
@@ -227,13 +233,20 @@ const ProviderEditor = ({ provider, onDone }: { provider: ProviderConfig; onDone
       </label>
       <label className={styles.field}>
         <span className={styles.fieldLabel}>{t('providerBaseUrl')}</span>
-        <input
-          className={styles.input}
-          value={provider.baseUrl}
-          placeholder="https://api.example.com/v1"
-          spellCheck={false}
-          onChange={(event) => updateProvider(provider.id, { baseUrl: event.target.value })}
-        />
+        {official ? (
+          <>
+            <input className={styles.input} value={provider.baseUrl} readOnly disabled />
+            <span className={styles.fieldHint}>{t('providerBaseUrlLocked')}</span>
+          </>
+        ) : (
+          <input
+            className={styles.input}
+            value={provider.baseUrl}
+            placeholder="https://api.example.com/v1"
+            spellCheck={false}
+            onChange={(event) => updateProvider(provider.id, { baseUrl: event.target.value })}
+          />
+        )}
       </label>
       <label className={styles.field}>
         <span className={styles.fieldLabel}>{t('providerApiKey')}</span>
@@ -248,7 +261,29 @@ const ProviderEditor = ({ provider, onDone }: { provider: ProviderConfig; onDone
           }
           onChange={(event) => updateProvider(provider.id, { apiKey: event.target.value })}
         />
+        {keyNotOfficial ? (
+          <span className={styles.fieldWarn}>{t('providerKeyNotOfficial')}</span>
+        ) : null}
       </label>
+      <div className={styles.field}>
+        <label className={styles.checkboxRow}>
+          <input
+            type="checkbox"
+            className={styles.checkbox}
+            checked={provider.deepseekExtensions}
+            onChange={(event) =>
+              updateProvider(provider.id, { deepseekExtensions: event.target.checked })
+            }
+          />
+          <span className={styles.checkboxText}>
+            <span className={styles.fieldLabel}>{t('providerDeepseekExtensions')}</span>
+            <span className={styles.fieldHint}>{t('providerDeepseekExtensionsHint')}</span>
+          </span>
+        </label>
+        {provider.deepseekExtensions && !isOfficialDeepSeekUrl(provider.baseUrl) ? (
+          <span className={styles.fieldWarn}>{t('providerDeepseekExtensionsWarn')}</span>
+        ) : null}
+      </div>
       <label className={styles.field}>
         <span className={styles.fieldLabel}>{t('providerModels')}</span>
         <textarea

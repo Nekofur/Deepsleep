@@ -44,6 +44,23 @@ const write = (value: string | null) => {
 
 const text = (value: unknown, fallback = '') => (typeof value === 'string' ? value : fallback)
 
+/** 只有官方地址才认识 DeepSeek 私有字段；中转站会以「参数非法」直接拒绝 */
+export const isOfficialDeepSeekUrl = (baseUrl: string): boolean => {
+  try {
+    return new URL(baseUrl).hostname.toLowerCase() === 'api.deepseek.com'
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 私有能力默认值：DeepSeek 模板 + 官方地址才打开。
+ * 以前只看模板 id，把地址改成中转站后仍会下发 thinking / deepseek_read_url 等字段，
+ * 网关不认识就报「The request was malformed or contained invalid parameters」。
+ */
+const defaultDeepseekExtensions = (presetId: string, baseUrl: string) =>
+  presetId.startsWith('deepseek') && isOfficialDeepSeekUrl(baseUrl)
+
 /** 读取时严格校验，坏字段回退为默认值，避免一处手改让整个设置不可用 */
 const normalizeProvider = (value: unknown): ProviderConfig | null => {
   if (typeof value !== 'object' || value === null) {
@@ -58,15 +75,21 @@ const normalizeProvider = (value: unknown): ProviderConfig | null => {
     ? [...new Set(raw.models.filter((item): item is string => typeof item === 'string' && !!item))]
     : []
   const model = text(raw.model) || models[0] || ''
+  const baseUrl = text(raw.baseUrl).trim() || preset.baseUrl
   return {
     id: raw.id,
     presetId: preset.id,
     name: text(raw.name).trim() || preset.name,
     protocol: raw.protocol,
-    baseUrl: text(raw.baseUrl).trim() || preset.baseUrl,
+    baseUrl,
     apiKey: text(raw.apiKey),
     models,
     model,
+    // 旧存档没有这个字段，按地址补算
+    deepseekExtensions:
+      typeof raw.deepseekExtensions === 'boolean'
+        ? raw.deepseekExtensions
+        : defaultDeepseekExtensions(preset.id, baseUrl),
   }
 }
 
@@ -104,6 +127,7 @@ const migrateLegacy = (providers: ProviderConfig[]): ProviderConfig[] => {
       apiKey,
       models: [...preset.models],
       model: preset.models[0] ?? '',
+      deepseekExtensions: defaultDeepseekExtensions(preset.id, preset.baseUrl),
     },
     ...providers,
   ]
@@ -160,6 +184,7 @@ export const addProvider = (presetId: string): ProviderConfig => {
     apiKey: '',
     models: [...preset.models],
     model: preset.models[0] ?? '',
+    deepseekExtensions: defaultDeepseekExtensions(preset.id, preset.baseUrl),
   }
   set((state) => ({ providers: [...state.providers, provider], activeId: provider.id }))
   persist()
@@ -168,16 +193,26 @@ export const addProvider = (presetId: string): ProviderConfig => {
 
 export const updateProvider = (id: string, patch: Partial<Omit<ProviderConfig, 'id'>>) => {
   set((state) => ({
-    providers: state.providers.map((provider) =>
-      provider.id === id
-        ? {
-            ...provider,
-            ...patch,
-            // 改协议或地址后原先勾选的模型可能已不存在，列表仍保留由用户决定。
-            models: patch.models ? [...new Set(patch.models)] : provider.models,
-          }
-        : provider
-    ),
+    providers: state.providers.map((provider) => {
+      if (provider.id !== id) {
+        return provider
+      }
+      const baseUrl = (patch.baseUrl ?? provider.baseUrl).trim() || provider.baseUrl
+      return {
+        ...provider,
+        ...patch,
+        baseUrl,
+        // 只改地址时重新判定私有能力：从官方改到中转站必须自动关闭，
+        // 否则会继续下发 DeepSeek 私有字段。显式传了开关值就以调用方为准。
+        deepseekExtensions:
+          patch.deepseekExtensions ??
+          (patch.baseUrl === undefined
+            ? provider.deepseekExtensions
+            : defaultDeepseekExtensions(provider.presetId, baseUrl)),
+        // 改协议或地址后原先勾选的模型可能已不存在，列表仍保留由用户决定。
+        models: patch.models ? [...new Set(patch.models)] : provider.models,
+      }
+    }),
   }))
   persist()
 }
@@ -210,39 +245,24 @@ export const getActiveProvider = (): ProviderConfig | null => {
 }
 
 /**
- * 是否为 DeepSeek 服务：旧版模板（deepseek、deepseek-openai 等）可能已不在模板列表里，
- * 或用户改过协议，此时不能只靠模板判断，否则会退化成「客户端预先搜索」。
+ * 供应商模板声明的能力覆盖只对同协议生效，用户改协议后回到该协议的默认能力。
+ * DeepSeek 模板自带的「联网 + 标题」也只在私有能力开启时才算数：
+ * 指向中转站时这两项由「工具服务」在客户端补，不能算服务端能力。
  */
-const isDeepSeekProvider = (provider: ProviderConfig): boolean => {
-  if (provider.presetId.startsWith('deepseek')) {
-    return true
-  }
-  const preset = findPreset(provider.presetId)
-  if (preset.extensions?.deepseek) {
-    return true
-  }
-  let host = ''
-  try {
-    host = new URL(provider.baseUrl).hostname
-  } catch {
-    host = ''
-  }
-  return /(^|\.)deepseek\.com$/i.test(host)
-}
-
-/** 供应商模板声明的能力覆盖只对同协议生效，用户改协议后回到该协议的默认能力 */
 export const getProviderFeatures = (provider: ProviderConfig): ProtocolFeatures => {
   const preset = findPreset(provider.presetId)
+  const sameProtocol = preset.protocol === provider.protocol
+  // DeepSeek 模板的能力声明绑定官方服务，私有能力关掉后不应继承
+  const inheritPreset = sameProtocol && (provider.deepseekExtensions || !preset.id.startsWith('deepseek'))
   const features = {
     ...PROTOCOL_FEATURES[provider.protocol],
-    ...(preset.protocol === provider.protocol ? preset.features : undefined),
+    ...(inheritPreset ? preset.features : undefined),
   }
-  // DeepSeek 兼容接口始终提供服务端搜索与标题，不依赖模板是否还在列表里
-  return isDeepSeekProvider(provider) ? { ...features, search: true, title: true } : features
+  return provider.deepseekExtensions ? { ...features, search: true, title: true } : features
 }
 
 export const getProviderExtensions = (provider: ProviderConfig): ProviderExtensions => ({
-  deepseek: isDeepSeekProvider(provider),
+  deepseek: provider.deepseekExtensions,
 })
 
 export const updateTools = (patch: Partial<ToolsConfig>) => {

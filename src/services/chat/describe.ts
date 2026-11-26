@@ -4,6 +4,8 @@ import type { AssistantMessage } from './types.js'
 
 export type Notice = {
   text: string
+  /** 出错时告诉用户「接下来怎么做」，单独一行展示，不回传给模型 */
+  advice?: string
   /** 模板答复使用正文样式；其余统一为红色错误提示。 */
   presentation?: 'response'
   /** 需要用户处理的问题附带的操作 */
@@ -26,22 +28,42 @@ export const describeReply = (reply: AssistantMessage): Notice | null => {
         : reply.error.message
     // 历史补传错误刷新后仍需说明原因，恢复沿用附件卡片或重新生成。
     if (kind === 'upload') {
-      return { text: message || translate('uploadFileStatusFailed') }
+      return {
+        text: message || translate('uploadFileStatusFailed'),
+        advice: translate('adviceUpload'),
+      }
     }
     if (kind === 'network') {
-      return { text: translate('commonNetworkErrorToast') }
+      return {
+        text: translate('commonNetworkErrorToast'),
+        advice: translate('adviceNetwork'),
+      }
     }
     switch (classifyStatus(status)) {
       case 'unauthorized':
-        return { text: translate('replyInvalidApiKey'), action: 'apiKey' }
+        return {
+          text: translate('replyInvalidApiKey'),
+          advice: translate('adviceUnauthorized'),
+          action: 'apiKey',
+        }
       case 'insufficientBalance':
-        return { text: translate('replyInsufficientBalance'), action: 'topUp' }
+        return {
+          text: translate('replyInsufficientBalance'),
+          advice: translate('adviceInsufficientBalance'),
+          action: 'topUp',
+        }
       case 'rateLimited':
-        return { text: translate('replyRateLimited') }
+        return {
+          text: translate('replyRateLimited'),
+          advice: translate('adviceRateLimited'),
+        }
       case 'serverBusy':
-        return { text: translate('completionServerBusyToast') }
+        return {
+          text: translate('completionServerBusyToast'),
+          advice: translate('adviceServerBusy'),
+        }
       default:
-        return message ? { text: message } : null
+        return message ? { text: message, advice: translate('adviceOther') } : null
     }
   }
   const template = getTemplateText(reply)

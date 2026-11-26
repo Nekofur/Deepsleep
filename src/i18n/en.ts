@@ -72,6 +72,10 @@ export const en = {
   toolFindIntro: 'Find keyword',
   toolFindFailTooltip: 'No related content found',
   readingLink: 'Reading',
+  readLinkDoneOne: 'Read 1 page',
+  readLinkDone: 'Read {count} pages',
+  readLinkFail: 'Could not read the page',
+  readLinkFailTooltip: 'This site blocks fetching, or requires sign-in',
   commonNetworkErrorToast: 'Network Error. Please check your network status.',
   replyInvalidApiKey:
     'The API Key is invalid or has been deleted. Please replace it and try again.',
@@ -209,6 +213,26 @@ export const en = {
   providerName: 'Name',
   providerProtocol: 'Protocol',
   providerBaseUrl: 'API base URL',
+  providerBaseUrlLocked:
+    'The official endpoint is fixed to https://api.deepseek.com. To use a relay, add a provider from the Custom template instead.',
+  providerKeyNotOfficial:
+    "This doesn't look like one of ours... Official DeepSeek keys start with sk-. If you are using a relay, add it from the Custom template.",
+  providerDeepseekExtensions: 'DeepSeek official-only features',
+  providerDeepseekExtensionsHint:
+    'Web search, page reading, file upload, safety check and server-side titles only work with the official API. Turn this off for relays, otherwise the gateway rejects the request with a 400.',
+  providerDeepseekExtensionsWarn:
+    'The current address is not the official API; enabling this will most likely get the request rejected (400 bad parameters).',
+  adviceNetwork:
+    'Check your connection; if you are behind a proxy or VPN, restart the app and try again.',
+  adviceUnauthorized:
+    'Open Settings → Models and check that the API key matches the selected provider (official keys start with sk-).',
+  adviceInsufficientBalance: 'Top up your DeepSeek account, then send again.',
+  adviceRateLimited: 'Wait a few seconds before sending again, or slow down.',
+  adviceServerBusy:
+    'The service is busy; retry shortly, or switch provider if it keeps failing.',
+  adviceOther:
+    'Check the model name, base URL and advanced parameters; switching providers shows whether the service or the config is at fault.',
+  adviceUpload: 'Check the file type and size limits, or remove the attachment and retry.',
   providerApiKey: 'API Key',
   providerApiKeyOptional: 'Optional for local servers',
   providerApiKeyPlaceholder: 'Enter API Key',

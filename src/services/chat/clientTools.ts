@@ -78,7 +78,10 @@ const searchBlock = (query: string, results: WebSearchResult[] | null): MessageS
   ]
 }
 
-const fetchBlocks = (pages: { url: string; title: string }[]): MessageStreamEvent[] =>
+/** 抓取结果：成功带上标题，失败也保留 URL，界面才能显示「哪一个没抓到」 */
+type FetchOutcome = { url: string; title: string; failed: boolean }
+
+const fetchBlocks = (pages: FetchOutcome[]): MessageStreamEvent[] =>
   pages.flatMap((page, index) => {
     const id = `client-fetch-${index}-${Date.now()}`
     const base = index * 3
@@ -99,21 +102,32 @@ const fetchBlocks = (pages: { url: string; title: string }[]): MessageStreamEven
       {
         type: 'content_block_start' as const,
         index: base + 1,
-        content_block: {
-          type: 'web_fetch_tool_result' as const,
-          tool_use_id: id,
-          kind: 'read_link' as const,
-          content: {
-            type: 'web_fetch_result' as const,
-            url: page.url,
-            content: {
-              type: 'document' as const,
-              source: { type: 'text' as const, media_type: 'text/plain' as const, data: '' },
-              title: page.title,
+        content_block: page.failed
+          ? {
+              // 失败也下发结果块，界面据此显示失败状态与链接
+              type: 'web_fetch_tool_result' as const,
+              tool_use_id: id,
+              kind: 'read_link' as const,
+              content: {
+                type: 'web_fetch_tool_result_error' as const,
+                error_code: 'url_not_accessible' as const,
+              },
+            }
+          : {
+              type: 'web_fetch_tool_result' as const,
+              tool_use_id: id,
+              kind: 'read_link' as const,
+              content: {
+                type: 'web_fetch_result' as const,
+                url: page.url,
+                content: {
+                  type: 'document' as const,
+                  source: { type: 'text' as const, media_type: 'text/plain' as const, data: '' },
+                  title: page.title,
+                },
+                published_at: null,
+              },
             },
-            published_at: null,
-          },
-        },
       },
       { type: 'content_block_stop' as const, index: base + 1 },
     ]
@@ -206,19 +220,27 @@ export const runClientTools = async ({
 
   const urls = questionText ? extractUrls(questionText).slice(0, MAX_FETCH_PAGES) : []
   const fetched: { title: string; content: string; url: string }[] = []
+  const fetchResults: FetchOutcome[] = []
   for (const url of urls) {
     signal.throwIfAborted()
     try {
       const page = await fetchPage(endpoint, url, signal)
       if (page.content) {
         fetched.push({ ...page, url })
+        fetchResults.push({ url, title: page.title || url, failed: false })
+      } else {
+        fetchResults.push({ url, title: page.title || url, failed: true })
       }
     } catch {
-      // 单个链接抓取失败时跳过
+      signal.throwIfAborted()
+      // 单个链接抓取失败：记下来让界面显示「没抓到哪一个」，而不是静默跳过
+      fetchResults.push({ url, title: url, failed: true })
     }
   }
+  if (fetchResults.length > 0) {
+    events.push(...fetchBlocks(fetchResults))
+  }
   if (fetched.length > 0) {
-    events.push(...fetchBlocks(fetched.map(({ url, title }) => ({ url, title }))))
     context.push(
       `以下是已抓取的网页正文：\n\n${fetched
         .map(

@@ -121,6 +121,7 @@ export const AssistantMessage = memo(function AssistantMessage({
                 </a>
               </>
             ) : null}
+            {notice.advice ? <span className={styles.noticeAdvice}>{notice.advice}</span> : null}
           </span>
         </div>
       ) : null}

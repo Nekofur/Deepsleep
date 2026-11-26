@@ -51,6 +51,13 @@ export type ProviderConfig = {
   models: string[]
   /** 当前选中的模型 */
   model: string
+  /**
+   * 是否发送 DeepSeek 官方私有字段（联网工具、安全审查、服务端标题）。
+   * 只有官方接口认识这些字段；指向中转站时必须关闭，
+   * 否则网关会以「The request was malformed or contained invalid parameters」拒绝。
+   * 新建时按 baseUrl 是否为官方地址自动判定，之后可在设置里手动切换。
+   */
+  deepseekExtensions: boolean
 }
 
 /**

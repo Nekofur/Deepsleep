@@ -320,10 +320,8 @@ export const buildReplyView = (reply: AssistantMessage, streaming: boolean): Rep
       status,
     }
     if (input.action === 'read_link') {
-      // 阅读链接仅展示进行态；成功、失败或中止后隐藏，原始结果仍保留用于后续请求。
-      if (status !== 'wip') {
-        return
-      }
+      // 阅读链接保留完成后的结果：用户需要看到抓过哪些网页、哪一个失败，
+      // 而不是请求一结束就整行消失。
       if (last?.type === 'read_link') {
         last.links.push(page)
       } else {

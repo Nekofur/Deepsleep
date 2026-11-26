@@ -383,11 +383,23 @@ const FindRow = ({ step, isLast }: { step: FindStep; isLast: boolean }) => {
 /** 阅读用户消息中的链接：视图只保留仍在读取的链接。 */
 const ReadLinkRow = ({ step, isLast }: { step: ReadLinkStep; isLast: boolean }) => {
   const t = useTranslate()
+  const wip = step.links.some((link) => link.status === 'wip')
+  const allFailed = !wip && step.links.every((link) => link.status === 'failed')
+  const count = step.links.length
   return (
-    <ToolRow icon={<IconLinkOutline16 />} isLast={isLast}>
-      <span className={clsx(styles.intro, styles.shimmer)}>{t('readingLink')}</span>
+    <ToolRow
+      icon={allFailed ? <IconBrowseWarningOutline16 /> : <IconLinkOutline16 />}
+      isLast={isLast}
+    >
+      <span className={clsx(styles.intro, wip && styles.shimmer)}>
+        {wip
+          ? t('readingLink')
+          : allFailed
+            ? t('readLinkFail')
+            : t(count === 1 ? 'readLinkDoneOne' : 'readLinkDone', { count })}
+      </span>
       {step.links.map((link) => (
-        <PageLink key={link.id} page={link} />
+        <PageLink key={link.id} page={link} failedTip={t('readLinkFailTooltip')} />
       ))}
     </ToolRow>
   )
